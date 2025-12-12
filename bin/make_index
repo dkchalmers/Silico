@@ -1,0 +1,706 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! make_index
+#? Create a an index file in Gromacs or DCD format.  
+#. Can use a versatile atom selection language and will also write out files containing selected atoms
+#. Important: For DCD format index files see the -z option below. 
+#F
+#; -z Number atoms from zero, as for DCD files (Note if you 
+#  wish to use this file with catdcd, you will need to
+#  edit the resulting file to contain only a single index group
+#  and remove all lines containing square brackets
+#; -as_<string> Use Atom Specifier (see below)
+#; -g Create an index group containing all atoms
+#; -a Create a separate index group for each atom (identified
+#     by unique atom name in each residue type)
+#; -e Create an index group for each element
+#; -r Create an index group for each residue
+#; -seg Create an index group for each segment
+#; -w Create separate index groups for water and Not_Water
+#; -i Create index group for ions (residue names NA, CL, K)
+#; -wi Create index groups Water_and_Ions and Not_Water_and_Ions
+#; -set Create an index group for each Mol2 atom set
+#; -an_<atom_names> Create index groups for listed atom names
+#; -rn_<res_names> Create index groups for listed residue names
+#; -d Analyse the molecule as for a Starmaker dendrimer
+#     (create index groups for COR, GAA, GAB,...)
+#; -np Make index of nonpolar carbon atoms (i.e. not attached to N or O). 
+#  This is useful for analysing surfactants
+#; -peg Make index of polyethylene glycol (PEG) atoms
+#; -memb Make MEMB index of membrane residues starting with the first 3 letters of standard residue names (CHL* POP* DPC*)
+#; -solu Make SOLU index of solute residues (not water, ions or membrane residues)
+#; -cyl_<dist> Modify MEMB residues to select only those within an XY distance <dist> of ligand (requires both -mem and -sol flags). 
+#        For umbrella sampling simulations.
+#; -system Make a SYSTEM index containing all atoms
+#; -write Write out a file containing atoms in index groups.  The output
+#  file contains structures corresponding to each index group (except
+#  the one containing all atoms)
+#; -base Base name for index groups select using the atom selection language 
+#  (otherwise index groups are the AS string itself)
+#
+#INCLUDE aslflags1.txt
+#INCLUDE aslflags2.txt
+#
+#. $Revision: 1.30.2.1.2.33 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @names;
+my @resnames;
+my $starttime = (times)[0];
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("make_index", '$Revision: 1.30.2.1.2.33 $');
+
+set_default_oappend('');
+
+my $zero = make_flag('z', undef, "Number atoms from zero, e.g. for DCD files");
+
+#
+# Atom specifiers
+#
+my ($asnames, $as) = atom_specifier_setup();
+
+#
+# Other flags to make index groups
+#
+my $all = 	make_flag('g', 	 undef, "Create an All_atoms group");
+my $atoms = 	make_flag('a', 	 undef, "Create a separate index group for each atom");
+my $el = 	make_flag('e',   undef, "Create an index group for each element");
+my $residue = 	make_flag('r', 	 undef, "Create index groups by residue number");
+my $segid = 	make_flag('seg', undef, "Create index groups by SEGID");
+my $water = 	make_flag('w', 	 undef, "Create separate indexes for water and non-water atoms");
+my $ions =      make_flag('i',   undef, "Create index for ion residues");
+my $wions =     make_flag('wi',  undef, "Create index for water and ions");
+my $set = 	make_flag('set', undef, "Create index groups using Mol2 atom sets");
+my $names = 	make_flag('an',  undef, "Create index groups for specific atoms with the following atom names", 1);
+my $resnames = 	make_flag('rn',  undef, "Create an index group with the following residues", 1);
+my $dendrimer = make_flag('d', 	 undef, "Analyse this file as a Starmaker dendrimer");
+my $nonpolar_c =make_flag('np',	 undef, "Create index file of nonpolar carbon atoms (i.e. not attached to N or O)");
+my $peg =	make_flag('peg', undef, "Create index file polyethylene glycol (PEG) atoms");
+my $membrane =	make_flag('memb', undef, "Create index file for membrane residues");
+my $cyl =	make_flag('cyl', undef, "Select membrane residues that are within distance XY distance of resname LIG", 1);
+my $solute =	make_flag('solu', undef, "Create index file for solute residues");
+my $system =	make_flag('system', undef, "Create a SYSTEM index containing all atoms");
+
+if ($cyl) {
+
+	silico_msg('dq', "Solute (-sol) and membrane (-mem) must be defined if -cyl flag is set") if !defined $solute || !defined $membrane;
+}
+
+#
+# Output options
+#
+my $write = make_flag('write', undef, "Write out a pdb file containing selected atoms for each set");
+my $base =  make_flag('base',  undef, "Index group base name (for groups selected using ASL)", 1);
+
+my @arguments = get_arguments2('>=1');
+
+if (defined $names) {
+	@names = split(" ", $names);
+	print "Making groups for the following atom names: @names\n";
+}
+
+if (defined $resnames) {
+	@resnames = split(" ", $resnames);
+	print "Making groups for the following residues: @resnames\n";
+}
+
+silico_msg('c', heading ("Atom specifiers\n"));
+foreach (@$as) {
+	print "$_\n";
+}
+print "\n";
+
+my @membrane_resnames = qw/CHL POP DPC/;
+my @ion_resnames = ("K", "NA", "CL", "SOD", "CLA");
+#my @standard_protein_resnames = qw/ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL/;
+
+foreach my $arg (@arguments) {
+
+	my $molcount = 0;
+	
+	silico_msg('c', "File: $arg\n");
+	my $mols = read_mol_any ($arg, undef, undef, 'NOBOND');
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	print "\n";
+		
+	foreach my $mol (@$mols) {
+	
+		my $mem_atoms;
+		my $sol_atoms; 
+
+		my $list; # List of atoms for each specifier
+	
+		++$molcount;
+	
+		#Identify all water molecules and other stuff
+		mol_fix_sodiums($mol);
+		molecule_check_and_fix_connectivity($mol);
+		label_waters($mol);
+		mol_renumber_residues($mol) if $residue;
+		
+		silico_msg('c', heading ("Generating indexfile groups for molecule $molcount\n"));
+		
+		# Atom specifiers
+		my $ascount = 1;
+		foreach my $spec (@$as) {
+			
+			silico_msg('d', "Code does not work when atom specifiers are used and the input file contains more than one molecule. Needs fixing :)") if $molcount == 2;
+			
+			my $alist = get_atoms_using_specifier($mol, $spec);
+			
+			my $asname = shift @$asnames;
+			if ($base) {
+				$asname = $base;
+				$asname = $asname."_".$ascount if $#{$as} > 0;
+			}
+			
+			my $n = $#{$alist}+1;
+			
+			silico_msg ('d', "Atom specifier not defined") if !defined $asname;
+			
+			print "Atom specifier $asname ($spec) selected $n atoms\n";
+			
+			if ($n > 0) {
+
+				print "asname $asname\n";
+				foreach my $atom (@$alist) {
+					push(@{$list->{$asname}}, $atom->{NUM});
+				}
+			}
+			
+			++$ascount;
+		}
+		print "\n" if $as->[0];
+		
+		foreach my $atom (atoms($mol)) {
+
+			my $ai = $atom->{NUM}; # Atom index number
+
+			# Group of all atoms (this includes water)
+			if ($all) {
+				my $id = "All";				
+				push @{$list->{$id}}, $ai;
+			}
+			
+			# Complete system (this includes water)
+			if ($system) {
+				my $id = 'SYSTEM';
+				push @{$list->{$id}}, $ai;
+			}
+			
+			# Group by residue name (could include water)
+			if ($resnames[0]) {
+						
+				my $subname = $atom->{SUBNAME};
+				$subname =~ s/ //g;
+				
+				foreach my $resname (@resnames) {
+
+					my $id = $resname;
+
+					if ($subname eq $resname) {
+
+						push @{$list->{$id}}, $ai;
+					}
+				}
+			}				
+			
+			# Group by SEGID (this includes water)
+			if ($segid) {
+
+				my $id = $atom->{SEGID} || 'NOT_DEFINED';
+				$id =~ s/ //g;
+				$id = "Segment_$id";
+				push @{$list->{$id}}, $ai;
+			}
+			
+			# Make index by atom sets (could include water)
+			if ($set) {
+		
+				foreach my $atomset (keys %{$mol->{ATOMSET}}) {
+			
+					my $id = "Atomset_$atomset";
+					$id =~ s/ //g;
+					
+					my $satom;
+			
+					foreach $satom (@{$mol->{ATOMSET}{$atomset}}) {
+				
+						if ($atom == $satom) {
+							push @{$list->{$id}}, $ai;
+							push @{$list->{"All_Atomsets"}}, $ai;	
+						}
+					}
+				}
+			}
+
+			# Water, Not_Water
+			if ($water) {
+			
+				if ($atom->{FG}{W}) {
+				
+					my $id = "Water";
+					push @{$list->{$id}}, $ai;
+					
+				} else {
+				
+					my $id = "Not_Water";
+					push @{$list->{$id}}, $ai;
+				}
+			}
+
+			# Water and ions, Not_Water_and_Ions
+			if ($wions) {
+
+
+				my $flag = 0;
+				if ($atom->{FG}{W}) {
+				
+					$flag = 1;
+				} else {
+
+					 foreach my $resname (@ion_resnames) {
+
+						if ($atom->{SUBNAME} =~ /^$resname/) {
+							$flag = 1;
+							last;
+						}
+					}	
+				}
+
+				if ($flag) {
+					my $id = "Water_and_Ions";
+					push @{$list->{$id}}, $ai;
+				} else {
+					my $id = "Not_Water_and_Ions";
+					push @{$list->{$id}}, $ai;
+				}
+			}
+			
+			# Make index by elements (could include water)
+			if ($el) {
+
+				my $id = $atom->{ELEMENT};
+				$id =~ s/ //g;
+				$id = "Element_$id";
+				push @{$list->{$id}}, $ai;
+			}
+			
+			# Make index groups for (specified) atom names (could include water)
+			if (defined $names[0]) {
+			
+				foreach my $name (@names) {
+					my $aname = $atom->{NAME};
+					$aname =~ s/ //g;
+					if ($aname eq $name) {
+						my $id = "AtomName_$name";
+						push @{$list->{$id}}, $ai;
+					}
+				}
+			}
+
+			# Make index by residue numbers (could include water)
+			if ($residue) {
+				my $id = $atom->{SUBNAME}.$atom->{SUBID}."_".$atom->{SUBCOUNT} || 'NOT_DEFINED';
+				$id =~ s/ //g;
+				$id = "Residue_$id";
+				push @{$list->{$id}}, $ai;
+			}
+
+			next if $atom->{FG}{W};
+			
+			#
+			# NO INDEX GROUP BELOW HERE INCLUDES WATER ATOMS
+			#
+			
+			# Nonpolar carbon atoms
+			if ($nonpolar_c) {
+				my $id = "Nonpolar";				
+				if ($atom->{ELEMENT} eq 'C') {
+					my $flag = 0;
+					foreach my $con (connected($atom, $mol)) {
+						$flag = 1 if $con->{ELEMENT} eq 'N';
+						$flag = 1 if $con->{ELEMENT} eq 'O';		
+						last if $flag;
+					}
+					if (!$flag) {
+						push @{$list->{$id}}, $ai;
+					}
+				}
+			}
+
+			# Ions
+			if ($ions) {
+
+				# Residue name must match exactly for ions
+				my $id = "Ions";
+
+				 foreach my $resname (@ion_resnames) {
+
+					if ($atom->{SUBNAME} =~ /^$resname/) {
+						push @{$list->{$id}}, $ai;
+						last;
+					}
+				}
+			}
+
+			# Polyethylene glycol atoms
+			if ($peg) {
+				my $id = "PEG";				
+				if ($atom->{ELEMENT} eq 'C') {
+				
+					my $o;
+					my $ccount = 0;
+					my $ocount = 0;
+					my $ccount2 = 0;
+					my $ocount2 = 0;
+					my $flag = 0;
+					
+					foreach my $con (connected($atom, $mol)) {
+						my $el = $con->{ELEMENT};
+						
+						last if ! ($el eq 'H' || $el eq 'C' || $el eq 'O');
+						
+						++$ccount if $con->{ELEMENT} eq 'C';
+						++$ocount if $con->{ELEMENT} eq 'O';
+						
+						if ($el eq 'C') {
+							foreach my $con2 (connected($con, $mol)) {
+								++$ccount2 if $con2->{ELEMENT} eq 'C';
+								++$ocount2 if $con2->{ELEMENT} eq 'O';
+							}
+						}
+						if ($el eq 'O') {
+							$o = $con;
+						}	
+						$flag = 1;
+					}
+					
+					#print "$atom->{NAME} $flag $ccount $ocount $ccount2 $ocount2\n";
+					
+					next if !$flag;
+					next if !($ccount == 1 && $ccount2 == 1 && $ocount == 1 && $ocount2 == 1);
+					push @{$list->{$id}}, $ai;
+					$atom->{PEG} = 1;
+					if (!$o->{PEG}) {
+						$o->{PEG} = 1;
+						push @{$list->{$id}}, $o->{NUM};
+					}
+				}
+			}
+			
+			# Membrane
+			if ($membrane) {
+
+				# Residues starting with membrane-type residue names
+			
+				my $id = "MEMB";
+			
+				my $subname = $atom->{SUBNAME};
+				$subname =~ s/ //g;
+				
+				my $flag;
+				foreach my $resname (@membrane_resnames) {
+
+					if ($subname =~ /^$resname/) {
+						$flag = 1;
+						last;
+					}
+				}
+				
+				if ($flag) {
+					push @$mem_atoms, $atom;
+					push @{$list->{$id}}, $ai;
+				}
+			}	
+
+			# Solute
+			if ($solute) {
+			
+				my $id = "SOLU";
+			
+				# Everything that is not membrane, water or ions
+			
+				my $subname = $atom->{SUBNAME};
+				$subname =~ s/ //g;
+				
+				my $flag;
+				# Not a membrane residue
+				foreach my $resname (@membrane_resnames) {
+
+					if ($subname =~ /^$resname/) {
+						$flag = 1;
+						last;
+					}
+				}
+
+				# Not an ion residue
+			        foreach my $resname (@ion_resnames) {
+
+					if ($atom->{SUBNAME} =~ /^$resname/) {
+						$flag = 1;
+						last;
+					}
+				}
+				
+				# Everything else
+				if (!$flag) {
+					push @$sol_atoms, $atom;
+					push @{$list->{$id}}, $ai;
+				}
+			}	
+
+			# Group for each atom (except in water)
+			if ($atoms) {
+				my $id = $atom->{SUBNAME}."_".$atom->{NAME};
+				$id =~ s/ //g;
+				$id = "Atom_$id";
+				push @{$list->{$id}}, $ai;
+			}
+			
+			# Process Starmaker dendrimer residues
+			if ($dendrimer) {
+			
+				if ($atom->{SUBNAME} eq 'COR' ||
+				$atom->{SUBNAME} =~ /^GA/ ||
+				$atom->{SUBNAME} =~ /^GB/) {
+			
+					my $id = "Dendrimer";
+					push @{$list->{$id}}, $ai;
+						
+					$id = $atom->{SUBNAME};
+					$id =~ s/ //g;
+					$id = "Generation_$id";
+					push @{$list->{$id}}, $ai;
+				}
+			}
+		}
+		
+		if ($cyl) {
+		
+			$mem_atoms = get_membrane_cylinder_atoms($mol, $cyl, $mem_atoms, $sol_atoms);
+			
+			undef $list->{MEMB};
+			
+			foreach my $atom (@$mem_atoms) {
+			
+				push @{$list->{MEMB}}, $atom->{NUM};
+			}
+		}
+		
+		my $speclist;
+		@$speclist = keys(%$list);
+		print "Speclist @$speclist\n";
+		
+		silico_msg('w', "No atoms selected. Did you specify any options? If so, no atoms were selected\n") if !defined $speclist->[0];
+	
+		my $filebase;
+		if ($#{$mols} == 0) {
+			$filebase = get_ofilebase($mols);
+		} else {
+			$filebase = sprintf "%s_%02d", get_ofilebase($mols), $molcount;
+			silico_msg('w', "Input file contains more than one structure. Writing output file $filebase.ndx\n\n");
+		}
+
+		my $outfile = "$filebase.ndx";
+
+		write_gromacs_index_file($outfile, $list, $speclist, $zero);
+
+		write_asl_atoms($mol, $list, $filebase) if $write;
+
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+
+
+sub get_membrane_cylinder_atoms {
+
+	#<
+	#? Select membrane cylinder atoms 
+	#; Requires: molecule, xy-distance, membrane atoms, soluta atoms
+	#; Returns: membrane atoms
+	#>
+
+	my $mol = $_[0];
+	my $xydist = $_[1];
+	my $mem_atoms = $_[2];
+	my $sol_atoms = $_[3];
+	
+	silico_msg('d', "No atoms in membrane set") if !defined $mem_atoms->[0];
+	silico_msg('d', "No atoms in solute set") if !defined $sol_atoms->[0];
+	
+	my $xydist2 = $xydist ** 2;
+	my $sxmean;
+	my $symean;
+	my $i;
+		
+	foreach my $atom (@$sol_atoms) {
+		
+		$sxmean += $atom->{X};
+		$symean += $atom->{Y};
+		++$i;
+	}
+		
+	my $dummy;
+	$dummy->{X} = $sxmean / $i;
+	$dummy->{Y} = $symean / $i;
+	$dummy->{Z} = 0;
+	
+	my $keep;
+	foreach my $atom (@$mem_atoms) {
+		
+		my ($x, $y, undef) = distance_periodic_xyz($atom, $dummy, $mol->{CELL});
+			
+		my $d2 = $x**2 + $y**2;
+			
+		next if $d2 > $xydist2;
+			
+		push @$keep, $atom;
+	}
+
+	my $n = $#{$keep}+1;
+		
+	$mem_atoms = $keep;
+	
+	my $nset1 = $#{$mem_atoms}+1;
+	my $nset2 = $#{$sol_atoms}+1;
+		
+	print "\nSelected $nset2 atoms in solute\n";
+	print "Selected $nset1 atoms in membrane\n\n";
+
+	return $mem_atoms;
+}
+
+
+sub mol_renumber_residues {
+
+	#<
+	#? Renumbers residues based on the order in which they
+	#  are listed in the file
+	#; Requires: Molecule
+	#; Returns: Nothing
+	#>
+
+	my $mol = $_[0];
+	
+	my $old_subid;
+	my $old_subname;
+	my $old_segid;
+	my $old_chain;
+	my $old_ext;
+	my $subid_count = 0;
+
+	# Fix substructure names
+	foreach my $atom (atoms($mol)) {
+
+		if ((defined $atom->{SUBID} && defined $old_subid && $atom->{SUBID} ne $old_subid) ||
+		(defined $atom->{SUBNAME} && defined $old_subname && $atom->{SUBNAME} ne $old_subname) ||
+		(defined $atom->{SEGID} && defined $old_segid && $atom->{SEGID} ne $old_segid) ||
+		(defined $atom->{CHAIN} && defined $old_chain && $atom->{CHAIN} ne $old_chain) ||
+		(defined $atom->{EXT} && defined $old_ext && $atom->{EXT} ne $old_ext) ||
+		(defined $atom->{SUBID} && !defined $old_subid) ||
+		(defined $atom->{SUBNAME} && !defined $old_subname) ||
+		(defined $atom->{SEGID} && !defined $old_segid) ||
+		(defined $atom->{CHAIN} && !defined $old_chain) ||
+		(defined $atom->{EXT} && !defined $old_ext)) {
+
+			++$subid_count;
+			$old_subid = $atom->{SUBID};
+			$old_subname = $atom->{SUBNAME};
+			$old_segid = $atom->{SEGID};
+			$old_chain = $atom->{CHAIN};
+			$old_ext = $atom->{EXT};
+		}
+		
+		$atom->{SUBCOUNT} = $subid_count;
+	}
+}
+
+sub mol_fix_sodiums {
+
+	#<
+	#? Ensures that all atoms named NA are recognised as sodium atoms. 
+	#; Requires: Molecule
+	#; Returns: Nothing
+	#>
+	
+	my $mol = $_[0];
+	
+	foreach my $atom (atoms($mol)) {
+	
+		if ($atom->{NAME} =~ /^NA[0-9]/ && $atom->{ELEMENT} eq 'N') {
+		
+			$atom->{ELEMENT} = 'Na';
+		}
+	}
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

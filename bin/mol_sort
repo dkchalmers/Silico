@@ -1,0 +1,303 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_sort
+#? Script to reorder the atoms in a file
+#. Note. -sa and -pa flags can be combined usefully
+#. Created: DKC 2000
+#F
+#; -r Rearrange residue order (takes list of residue numbers from command line)
+#; -sa Sort atoms alphabetically (ignoring all other fields)
+#; -pa Sort atoms using 'pdb_molecule_sort_atoms' (considers residue, chain and SEGID)
+#; -sr Sort by residue name 
+#; -cm Canonical SMILES sort of all atoms in molecule
+#; -rename Rename atoms after sorting
+#; -fix Fix molecule chains and SEGID records
+#; -fixs Fix substructure IDs (make each chain a separate substructure)
+#SF
+#. $Revision: 1.22.2.5.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_sort", '$Revision: 1.22.2.5.2.2 $');
+require silico_smiles;
+require silico_split;
+
+my $rearrange = 	make_flag('r', 'rearrange',  'Rearrange residue order');
+my $sort_a = 		make_flag('sa', 'sort-atoms',  'Sort atoms by atom number');
+my $pdb_sort_a = 	make_flag('pa', 'pdb-sort-atoms',  'Sort atoms');
+my $sort_r = 		make_flag('sr', 'sort-residue',  'Sort by residue name');
+my $canonical_molecule = make_flag('cm', 'sort-molecule-canonical',  'Canonical SMILES sort of all atoms in molecule');
+my $rename  = 		make_flag('rename', 'rename-atoms',  'Rename atoms after sorting (only works with -cm)');
+my $fix_chain  = 	make_flag('fix', 'fix-chains',  'Fix molecule chains and segids');
+my $fix_subid = 	make_flag('fixs', 'fix-subid',  'Fix substructure IDs');
+my $make_res  = 	make_flag('res', 'make-residues',  'Create residues');
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('sort');
+
+silico_msg('d', "No sorting method chosen") if !($rearrange || $sort_a || $pdb_sort_a || $sort_r || $canonical_molecule);
+
+foreach my $arg (@arguments) {
+	
+	silico_msg('c', "File: $arg\n");
+	
+	my $mols = read_mol_any ($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach my $mol (@$mols) {
+	
+		if ($make_res) {
+			molecule_make_residues($mol)
+		}	
+	
+		if ($sort_a) {
+		
+			silico_msg('c', "\n","Sorting atoms numerically\n");
+			
+			foreach my $mol1 (@$mols) {
+
+				my @at = $mol1->{ATOMS};
+ 
+				foreach my $atom (atoms($mol1)) {
+
+					# Sort atoms based on a 3-part name like 'H21A'
+					my $n = $atom->{NAME};
+					$n =~ s/ //g;
+					my @split = $n =~ m/(\D*)(\d*)(\D*)/; 
+
+					my $e = $atom->{ELEMENT_NUM};
+					$e  = 99 if $e > 99;
+					$e  = 0 if $atom->{ELEMENT} eq 'C';
+					$e  = 99 if $atom->{ELEMENT} eq 'H';
+					$atom->{NEW_NUM} = ($split[1] || 0)*100000 + $e * 1000 + ord($split[2]);
+				}
+
+				molecule_reorder($mol1);
+			}
+		}
+
+		if ($pdb_sort_a) {
+			silico_msg('c', "\n","Sorting atoms using pdb_sort_atoms\n");
+			pdb_molecule_sort_atoms($mol);
+		}
+	
+	
+		if ($sort_r) {
+	
+			silico_msg('c', "\n","Sorting by residue\n");
+	
+			my $residues = molecule_get_residues($mols->[0]);
+			@$residues = sort {$a->[0]{SUBNAME} cmp $b->[0]{SUBNAME}} @$residues;
+			
+			my $i = 0;
+			foreach my $res (@$residues) {
+			
+				foreach my $atom (@$res) {
+					$atom->{NEW_NUM} = $i;
+				}
+				++$i;
+			}
+			molecule_reorder($mol);
+			
+		}
+	
+		if ($rearrange) {
+	
+			silico_msg('c', "\n","Rearranging residues\n");
+	
+			my $residues = molecule_get_residues($mol);
+		
+			silico_msg('n', "Resetting molecule CHAIN and SEGID identifiers\n");
+
+			print heading("Residues\n");
+		
+			my $count = 0;
+			my $count2 = 0;
+			foreach my $res (@$residues) {
+		
+				++$count;
+				++$count2;
+			
+				if ($count2 == 10) {
+			
+					$count2 = 0;
+					print "\n";
+				}
+			
+				print "$count: $res->[0]{SUBNAME} $res->[0]{SUBID}  ";
+			}
+		
+			print "\n" if $count != 0;
+		
+			print "\n";
+			my $answer = prompt("Enter new residue order (residue numbers separated by spaces): ");
+			my @newnums = splitline($answer);
+
+			print "\n";
+	
+			RESIDUE: foreach my $res (@$residues) {
+			
+				my $atom;
+				my $i;
+				my $resnum = $res->[0]{SUBID};
+				
+				for ($i = 0; $i <= $#newnums; ++$i) {
+				
+					if ($newnums[$i] == $resnum) {;
+					
+						if ($resnum != ($i+1)) {
+							silico_msg('c', "Renaming $res->[0]{SUBNAME} $resnum to ".($i+1)."\n");
+						}
+					
+						foreach my $atom (@$res) {
+							$atom->{CHAIN} = 'A';
+							$atom->{SEGID} = '    ';
+							$atom->{SUBID} = $i + 1;
+							$atom->{SUBCOUNT} = $i + 1;
+						}
+					
+						next RESIDUE;
+					}
+				}
+			
+				silico_msg('w', "Premature end to residue numbers!\n",
+						"No further residues will be renumbered.\n");
+				last;
+			}
+		}
+		
+		if ($canonical_molecule) {
+			
+			molecule_check_and_fix_connectivity($mol);
+			my $split = molecule_split($mol);
+			my $m;
+			my $oldmol = $mol;
+			foreach my $m (@$split) {
+				my $smiles = mol_sort_smiles($m);
+				print "Smiles: $smiles\n";
+				$mol->{SDF_DATA}{SORT_SMILES} = $smiles;
+				mol_rename_atoms($m) if $rename;
+			}
+			ens_set_chains($split) if $fix_chain;
+			if ($fix_subid) {
+				my $i = 0;
+				my $m;
+				foreach my $m (@$split) {
+					++$i;
+					foreach my $atom (atoms($m)) {
+						$atom->{SUBID} = $i;
+					}
+				}
+			}
+			$mol = ${ensemble_consolidate($split, 1)}[0];
+			$mol->{SOURCE_FILE_NAME} = $oldmol->{SOURCE_FILE_NAME};
+			$mol->{SOURCE_FILE_TYPE} = $oldmol->{SOURCE_FILE_TYPE};
+
+		} elsif ($rename) {
+			mol_rename_atoms($mol)
+		}
+	
+		print "\n";
+	}
+	
+	write_mol_any($mols);	
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub ens_set_chains {
+
+	my $mols = $_[0];
+	
+	my $atom;
+	my $chain = 'A';
+	my $mol;
+	my $segid;
+	my $i  = 1;
+	
+	
+	foreach my $mol (@$mols) {
+	
+		$segid = sprintf "S%03d", $i;
+	
+		foreach my $atom (atoms($mol)) {
+			$atom->{CHAIN} = $chain;
+			$atom->{SEGID} = $segid;
+	
+		}
+		++$chain;
+		++$i;
+	}
+
+
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

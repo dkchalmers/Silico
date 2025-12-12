@@ -1,0 +1,146 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_extents
+#? Calculate the maximum and minimum X, Y and Z coordinates of a molecule and
+#  the centre point.
+#. Values are written to STDOUT
+#. Flags:
+#; none
+#
+#. $Revision: 1.18.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_extents", '$Revision: 1.18.2.1.2.1 $');
+
+my @all = (-99999, -99999, -99999, 99999, 99999, 99999);
+my $arg;
+my @arguments;
+my @centre;
+my $i;
+my $margin;
+my $mol;
+my $mols;
+my $molcount = 0;
+
+$margin = make_flag('margin', 'margin', "Add margin to extents", 1, 0);
+
+@arguments = get_arguments2(undef, 'none');
+
+foreach $arg (@arguments) {
+
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$i = 0;
+	foreach $mol (@$mols) {
+	
+		++$molcount;
+		
+		@centre = molecule_centre ($mol);
+		
+		silico_msg('c', heading("Molecule: $mol->{NAME} (".($i+1).")\n"));
+		silico_msg('c', "Using margin: $margin\n") if $margin;
+		silico_msg('c', "\n",
+				"          Max       Min       Centre    Width\n",
+				"\n",
+				sprintf("X        %8.4f  %8.4f  %8.4f  %8.4f\n",$centre[0]+$margin, $centre[3]-$margin, $centre[6], ($centre[0]-$centre[3])+2*$margin),
+				"\n",
+				sprintf("Y        %8.4f  %8.4f  %8.4f  %8.4f\n",$centre[1]+$margin, $centre[4]-$margin, $centre[7], ($centre[1]-$centre[4])+2*$margin),
+				"\n",
+				sprintf("Z        %8.4f  %8.4f  %8.4f  %8.4f\n",$centre[2]+$margin, $centre[5]-$margin, $centre[8], ($centre[2]-$centre[5])+2*$margin),
+				"\n",
+				"\n");
+		++$i;
+		
+		for (0..2) {
+			$all[$_] = $centre[$_] if $centre[$_] > $all[$_];
+		}
+		for (3..5) {
+			$all[$_] = $centre[$_] if $centre[$_] < $all[$_];
+		}
+	}
+}
+
+if ($molcount > 1) {
+	silico_msg('c', heading("Extents of all molecules \n"));
+	silico_msg('c', "Using margin: $margin\n") if $margin;
+	silico_msg('c', "\n",
+			"          Max       Min       Centre    Width\n",
+			"\n",
+			sprintf("X        %8.4f  %8.4f  %8.4f  %8.4f\n",$all[0]+$margin, $all[3]-$margin, ($all[0]+$all[3])/2, ($all[0]-$all[3])+2*$margin),
+			"\n",
+			sprintf("Y        %8.4f  %8.4f  %8.4f  %8.4f\n",$all[1]+$margin, $all[4]-$margin, ($all[1]+$all[4])/2, ($all[1]-$all[4])+2*$margin),
+			"\n",
+			sprintf("Z        %8.4f  %8.4f  %8.4f  %8.4f\n",$all[2]+$margin, $all[5]-$margin, ($all[2]+$all[5])/2, ($all[2]-$all[5])+2*$margin),
+			"\n",
+			"\n");
+}
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

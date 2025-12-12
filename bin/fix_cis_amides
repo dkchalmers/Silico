@@ -1,0 +1,192 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! fix_cis_amides
+#? Crude (but effective) convert cis amides to trans. Generates 
+#  structures that, when minimised, contain trans amides
+#F
+#SF
+#. $Revision: 1.4.2.1.2.3 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $amide;
+my $arg;
+my @arguments;
+my $ext;
+my $format;
+my $grace1;
+my $grace_exe;
+my $oformat;
+my $print;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_amides", '$Revision: 1.4.2.1.2.3 $');
+
+@arguments = get_arguments2('>=1');
+
+foreach $arg (@arguments) {
+
+	my $filebase;
+	my $mol;
+	my $molcount;
+	my $mols;
+	
+	$filebase = get_filebase($arg);
+	
+	$mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$molcount = 0;
+	
+	foreach $mol (@$mols) {
+		
+		++$molcount;
+		
+		# Create bonds
+		molecule_check_and_fix_connectivity($mol);
+		
+		# Check for hydrogens
+		if (mol_has_h($mol) < 1) {
+			silico_msg('w', "Molecule $molcount in file $arg (\"$mol->{NAME}\") lacks hydrogens.\n",
+					"This molecule has been skipped.\n");
+			next;
+		}
+		
+		silico_msg('c', "\n", "Checking secondary amides...\n", "\n");
+		
+		# Check secondary amides for their angles (w and w')
+		mol_check_amides($mol);
+		
+		silico_msg('c', "\n","Finished checking secondary amides\n");
+		
+		make_cis_amides_trans($mol);
+	}
+
+	write_mol_any($mols);
+}
+		
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub make_cis_amides_trans {
+
+	my $mol = $_[0];
+
+	my $atom;
+	my @bv;
+	my ($c, $c1, $h, $n, $n1, $o);
+	my $group;
+	
+	foreach $group (@{$mol->{FG}}) {
+		
+		next if $group->{NAME} ne 'S_AMIDE';
+			
+		undef $c; # amide C
+		undef $n; # amide N
+		undef $o; # amide O
+		undef $h; # amide H
+		undef $c1; # atom conected to amide C
+		undef $n1; # atom conected to amide N
+
+		foreach $atom (@{$group->{ATOMS}}) {
+	
+			$n = $atom if $atom->{FG}{S_AMIDE_N};	
+			$c = $atom if $atom->{FG}{S_AMIDE_C};	
+			$o = $atom if $atom->{FG}{S_AMIDE_O};	
+		}
+
+		foreach $atom (connected($n, $mol)) {
+			$h = $atom if $atom->{ELEMENT} eq 'H';
+			$n1 = $atom if (!$atom->{FG}{S_AMIDE_C}) && $atom->{ELEMENT} ne 'H';
+		}
+		foreach $atom (connected($c, $mol)) {
+			$c1 = $atom if !$atom->{FG}{S_AMIDE_N} && !$atom->{S_AMIDE_O};
+		}
+
+		if (!($c && $n && $o && $h && $c1 && $n1)) {
+			silico_msg ('w', "Invalid amide\n") if !($c && $n && $o && $h && $c1 && $n1);
+			#print "c $c c1 $c1 n $n n1 $n1 o $o h $h\n";
+			next;
+		}
+
+		next if !($n->{CIS_AMIDE} || $n->{DISTORTED_CIS_AMIDE});
+		silico_msg("c", "Fixing cis amide: c $c->{NUM} n $n->{NUM}\n");
+
+		@bv = bond_vector($n, $h);
+
+		$h->{X} -= 3* $bv[0];
+		$h->{Y} -= 3* $bv[1];
+		$h->{Z} -= 3* $bv[2];
+
+		$n->{X} -=  $bv[0];
+		$n->{Y} -=  $bv[1];
+		$n->{Z} -=  $bv[2];
+	}
+}
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

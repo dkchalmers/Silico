@@ -1,0 +1,105 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! schrod_qikprop
+#? Run Schrodinger Qikprop
+#F
+#; -force Overwrite existing output files
+#; -maxtok_<num> Maximum number of Schrodinger tokens to use
+
+#SF
+#. $Revision: 1.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+silico_setup();
+require silico_mmod;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+print_title("schrod_qikprop", '$Revision: 1.1.2.1 $');
+
+my $nofast = 	make_flag('nofast',  undef, "Do not use qikprop '-fast' options");
+my $force = 	make_flag('force',  undef, "Overwrite existing output files\n");
+    		make_flag('maxtok',  'maxtok', "Maximum number of Schrodinger tokens to use", 1);
+
+my @arguments = get_arguments2('>=1');
+
+foreach my $arg (@arguments) {
+
+	print heading("* File: $arg *\n");
+	my $filebase = get_filebase($arg);
+	$filebase .= "_qik";
+	
+	if (-e "$filebase.log" && mmod_logfile_normal_termination("$filebase.log") && !$force) {
+		silico_msg('c', "Complete output file '$filebase.log' exists. Skipping. Use -force to overwrite\n");
+                next;
+        }
+
+	my $mols = read_mol_any($arg);
+	mmod_qikprop($mols, $filebase, !$nofast);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

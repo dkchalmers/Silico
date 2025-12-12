@@ -1,0 +1,143 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_groups
+#? Find functional groups in a molecule using subroutine mol_label_functional_groups()
+#F
+#; -het Also print out information about aromatic rings found using mol_label_heterocycles().
+#; -p Print out internal Silico information for debugging
+#SF
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable Declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("find_groups", '$Revision: 1.15-78-g19bf279 $');
+
+my $printout = make_flag('p', 'printout', "Print out internal Silico information for debugging");
+
+my @arguments = get_arguments2('>=1');
+
+$Silico::debug = $Silico::debug;
+
+foreach my $arg (@arguments) {
+
+	silico_msg('c', "\n");
+	
+	if ($arg =~ /_gp/) {
+		silico_msg('n', "Filename $arg appears to be output of find groups. Skipping.");
+		next;
+	}
+	
+	my $filebase = get_filebase($arg);
+	my $mols = read_mol_any($arg, undef, undef, 'QUIET');
+	if (!defined $mols) {
+		mol_read_error($arg);
+		next;
+	}
+
+	foreach my $mol (@$mols) {
+	
+		silico_msg('c', heading($mol->{NAME}));
+		
+		molecule_check_and_fix_connectivity($mol);
+		mol_label_functional_group($mol);	
+		# Find systems with up to three fused six membered rings
+		mol_label_heterocycles($mol, 14, "HET ");
+		make_atomset_fg ($mol, '*');
+		make_atomset($mol, 'UNIDENTIFIED_GROUP', 'UNIDENTIFIED_GROUP');
+		
+		molecule_printout($mol, 'all') if $printout;
+		
+		if ($mol->{FG}[0]) {
+		
+			my @groups = sort {$a->{NAME} cmp $b->{NAME}} @{$mol->{FG}};
+			my $i = 1;
+			foreach my $group (@groups) {
+		
+				printf "%4i %-30s\t", $i, $group->{NAME};
+				my $j = 0;
+				foreach my $atom (@{$group->{ATOMS}}) {
+					print "$atom->{NAME} ";
+					if ($j > 10) {
+						$j = 0;
+						print "\n\t\t";
+					}
+					++$j;
+				}
+				print "\n" if $j != 0;
+				++$i;
+			} 
+		} else {
+			silico_msg('c', "No groups found\n");
+		}
+		
+		molecule_printout($mol) if $Silico::debug;
+	}
+
+	write_mol2($mols, "$filebase\_gp.mol2", 'NOTYPE QUIET');	
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

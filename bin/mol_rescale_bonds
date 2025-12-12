@@ -1,0 +1,158 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_rescale_bonds
+#? Rescale a molecule so that the carbon-carbon bonds have 
+#  a reasonable average bond length.
+#. This defaults to 1.5 Angstroms, however, it can be adjusted
+#  through use of the -l flag. Alternatively, a scaling factor can be used
+#  by means of the -f flag.
+#. This is useful to clean up files that have come out of Isis databases
+#  before they are minimised by some other program (eg Insight).
+#F
+#; -f <factor> Scaling factor (not to be used with -l)
+#; -l <length> Target C-C bond length (not to be used with -f)
+#; -o <format> Output format
+#; -split Split multiple molecule files into a separate directory.  
+#  Each molecule is renamed with an "Insight safe" name
+#SF
+#. Created: DKC Thu Sep 21 13:19:53 EST 2000
+#. $Revision: 1.22.2.1.2.4 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_rescale_bonds", '$Revision: 1.22.2.1.2.4 $');
+
+my $sfactor = make_flag(    'f', 'scale-factor',		"Scale factor", 1);
+my $length =  make_flag(    'l', 'target-length',		"Target C-C bond length", 1);
+my $split =   make_flag('split', 'split',		"Split files into a directory"   );
+
+my @arguments = get_arguments2('>=1');
+$split || set_default_oappend('re');
+
+if (defined $sfactor && defined $length) {
+	silico_msg('d', "You've tried to use a scaling factor and a target length at the same time!\n",
+			"Please choose one or the other.\n");
+}
+
+if (!defined $sfactor && !defined $length) {
+	
+	silico_msg('c', "Setting target C-C bond length to 1.5 Ang\n");
+			
+}
+
+$Silico::debug = $Silico::debug;
+
+foreach my $arg (@arguments) {
+	
+	my $mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	my $filebase = get_filebase($arg);
+
+	foreach my $mol (@$mols) {
+		mol_rescale_bonds($mol, $sfactor) if defined $sfactor;
+		mol_rescale_bonds($mol, undef, $length) if defined $length;
+	}
+
+	if (!$split) {
+		write_mol_any($mols);
+	} else {
+		
+		# If split flag is set then split file in to a directory 
+		# called <filename>.dir
+		
+		my $rm_status = system("rm -rf $filebase.dir");
+		if ($rm_status) {
+			silico_msg('d', "Removal of directory $filebase.dir failed!\n");
+		}
+		
+		my $mk_status = system("mkdir $filebase.dir");
+		if ($mk_status) {
+			silico_msg('d', "Creation of directory $filebase.dir failed!\n");
+		}
+		
+		chdir("$filebase.dir");
+		
+		foreach my $mol (@$mols) {
+
+			my $ens;
+			
+			$mol->{NAME} = insight_rename($mol->{NAME});
+			$ens->[0] = $mol;
+			write_mol_any($ens, "$mol->{NAME}.mol2");
+		}
+		
+		chdir ("..");
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

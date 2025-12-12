@@ -1,0 +1,237 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! run_mopac
+#? Minimise a molecule or calculate charges using MOPAC.  
+#. Use: run_mopac [flags] <molecule_file>
+#. Assumes that the mopac executable is 'mopac',
+#  otherwise the executable location should be specified on the command line.
+#. Tested with mopac16
+#. Default Hamiltonian is: PM7 
+#. Default Mopac options are: NOINTER LET MMOK XYZ GEO-OK.  
+#. Performs a simple check to see if a molecule is a radical. 
+#. To calculate charges on a molecule only use the -1scf flag to set the 1SCF option.  
+#. Use the -esp flag  to cacluclate ESP charges (not tested lately).
+#F
+#; -ham Hamiltonian (default PM7)
+#; -c <val> Total charge on molecule
+#; -r Radicals are OK. Otherwise, radicals will be skipped
+#; -geo Use Mopac GEO-OK keyword
+#; -1scf use 1SCF keyword (ie do not minimise)
+#; -ef  Use eigenvector following (EF)
+#; -esp Use esp charges (ESP)
+#; -mozyme Use MOZYME keyword
+#; -cycles_<val> Use CYCLES keyword (default 1000)
+#; -k_"string" Additional keywords
+#.
+#; -noclean Do not delete Mopac output files
+#; -x Path to Mopac executable
+#.
+#SF
+#. Created: DKC 13.6.2000 and on and on
+#. $Revision: 1.1.2.6 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $filecount = 0;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("run_mopac", '$Revision: 1.1.2.6 $');
+
+set_default_oappend("mop");
+
+require silico_mopac;
+
+my $keywords = setup_mopac_flags();
+
+my @arguments = get_arguments2('>=1');
+
+my $molcount = 0;
+
+# The main loop
+foreach my $arg (@arguments) {
+	
+	my $fr_in;
+	my $fr_out;
+	my $fr_out1;
+	my $fr_out2;
+	my $filebase;
+	my $fileext;
+
+	LOOP: while (my $mol = read_mol_single($fr_in, $arg)) {
+	
+		++$molcount;
+		
+		$mol->{SDF_DATA}{NUM} = $molcount;
+		
+	
+		print heading("$molcount $mol->{NAME}\n");
+		
+		($filebase, $fileext, undef) = get_mopac_outfile_name($mol) if !$filebase;
+		
+		my $charge = get_sflag('c'); 
+		if (!defined $charge) {
+		
+			$charge = molecule_formal_charge($mol);
+			silico_msg('c', "Setting total charge to $charge\n");
+			$mol->{SDF_DATA}{CHARGE} = $charge;
+		}
+		
+		# Specific keywords for each molecule 
+		my $k2 = "$keywords CHARGE=".$charge;
+		
+		print "Keywords for molecule $mol->{NAME}: $k2\n";
+		$mol->{MOPAC_KEYWORDS} = $k2;
+
+		my $radical;
+		my $tot;
+		($tot, $radical) = mol_count_valence_electrons($mol, $charge);
+
+		if ($radical && !get_lflag('radicals-ok')) {
+			silico_msg('w', "Molecule has $tot valence electrons looks like it is a radical. Skipping\n");
+			next;
+		}
+		
+		# 
+		# Run mopac
+		#
+		
+		my $newmol = run_mopac($mol);
+		
+		#print "$newmol\n";
+		
+		$newmol->{NAME} ||= 'Mol';
+		$newmol->{NAME} =~ s/\S*//g;
+		
+		if (!defined $newmol->{ATOMS}[0]{X} || length($newmol->{NAME}) > 20) {
+		
+			silico_msg("w", "Molecule $molcount. Mopac failed to complete. Skipping\n");
+			
+			# Causes corruption problems?
+			#write_mol_single($fr_out1, $mol, $filebase."_failed");
+			
+			next;
+		}
+		
+		die if length($mol->{NAME} ) > 50;
+
+		print "Writing to $filebase.$fileext\n";
+		write_mol_single($fr_out, $newmol, $filebase, $fileext);
+		
+		#molecule_printout($mol);
+		
+		#close_molfile($fr);
+		
+		#die if $molcount > 17;
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub check_dist {
+
+	my $fr_out = $_[0];
+	my $mol = $_[1];
+	my $filebase = $_[2];
+	my $dist = $_[3] || 2.2;
+	
+	my $err;
+	
+	foreach my $atom1 (atoms($mol)) {
+
+		foreach my $atom2 (connected($atom1, $mol)) {
+		
+			#next if $atom1 == $atom2;
+			
+			my $d = distance($atom1, $atom2);
+			
+			#print "$mol->{NAME} $atom1->{NUM} $atom2->{NUM} d $d\n";
+			
+			 if ($d > $dist) {
+			 
+			 	$err = 1;
+				last;
+			 }
+		}
+	}
+	
+	if ($err) {
+	
+		my $n = $mol->{NAME} || 'Mol';
+		
+		silico_msg("w", "Molecule $mol->{NAME} Molecule has very long bonds. Likely bad structure. Skipping\n");
+			
+		#write_mol_single($fr_out, $mol, $filebase);
+			
+		return 0
+		
+	}
+	
+	return 1;
+}
+
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

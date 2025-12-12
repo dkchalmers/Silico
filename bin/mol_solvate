@@ -1,0 +1,243 @@
+#!/usr/bin/perl -w
+#!/usr/bin/perl -d:NYTProf -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_solvate
+#? Make a solvated box around a molecule with a density
+#.
+#. Only one file may be supplied as an argument.
+#. Default water residue name is HOH with atoms labelled OH2, H1, H2.  
+#  Using the -amber flag produces residue name WAT with atom names O, H1, H2
+#  Using the -gromacs flag produces residue name SOL with atom names OW, HW1, HW2
+#
+#. Usage: mol_solvate <file> [<flags>]
+#F
+
+#. Solute flags
+#; -t			Translate solute molecule to coordinate origin
+#. Solvent flags
+#; -n_<number>		Add this number of solvent molecules
+#; -s_<file>		Solvent molecule file
+#; -d_<number>		Required density (default 1 g/mL)
+#; -r_<resname>		Specified name for water molecules (overrides standard water names)
+#; -amber		Give water molecules AMBER names (resname WAT, Oxygen O, hydrogens H1, H2),
+#			and also adds TER after each water molecule
+#; -gromacs		Give water molecules GROMACS names (resname SOL, Oxygen OW hydrogens HW1, HW2),
+#. Geometry flags
+#
+#; -x_<number>  	}
+#; -y_<number>  	} Dimensions of the box in each direction
+#; -z_<number>  	}
+#; -bilayer_<number>	Solvate bilayer. ie Don't put solvent molecules within <number> A of bilayer plane.
+#               	Default is XZ. XY plane if -xy flag is used.
+#
+#; -xy          	Solvate bilayer in the xy plane
+#; -plane_<thick>  	Construct a plane of molecules in the centre of the cell of thicknes <thick>. By 
+#                       default the XZ plane is constructed unless the -xy flag is used. 
+#; -sphere_<radius>  	Add solvent molecules in sphere of radius <radius>
+#; -invert	        Invert the sense of all 3d structures
+#. Packing flags
+#; -si_<factor>         Initial scale factor for atom-atom packing distance (default 0.8) 
+#; -sm_<factor>         Minimum scale factor for atom-atom packing distance (default 0.4)  
+#; -incr_<number>       Number of unsuccesful molecule packing trials before reducing the scale factor.  Default 100
+
+
+#SF
+#. $Revision: 1.50.2.1.2.9 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_solvate;
+require silico_rbox;
+print_title("mol_solvate", '$Revision: 1.50.2.1.2.9 $');
+
+# Solute flags
+my $trans = 	make_flag('t', 'translate-embed', 'Translate embedded molecule to centre of cell');
+
+# Solvent flags
+my $nummols = 	make_flag('n', 'number-of-molecules',	"Required number of solvent molecules",	1, undef, undef, "Decimal > 0");
+my $smolfile = 	make_flag('s', 'solvent-molecule-file',"File containing solvent molecule", 1);
+my $density =   make_flag('d', 'density', "Required density for solvated system", 1, 1.0,undef, "Decimal > 0");
+my $res = 	make_flag('r', 'residue-name', "Residue name for solvent molecules", 1);
+	    	make_flag('amber', 'amber', "Generate AMBER compatible water names");
+	    	make_flag('gromacs', 'gromacs', "Generate GROMACS compatible water names");
+
+# Geometry flags
+my $cellx = 	make_flag('x', 'box-size-x', "Box size X", 1, undef, undef, "Decimal > 0");
+my $celly = 	make_flag('y', 'box-size-y', "Box size Y", 1, undef, undef, "Decimal > 0");
+my $cellz = 	make_flag('z', 'box-size-z', "Box size Z", 1, undef, undef, "Decimal > 0");
+my $bilayer =	make_flag('bilayer', 	'solvate-bilayer', 	"Don't place molecules within this distance of xz (or xy) plane", 1, undef, undef, "Decimal >= 0");
+$Silico::xy =	make_flag('xy', 'xy-plane', "Solvate blayer in the xy plane", 0);
+$Silico::plane =	make_flag('plane', 'plane-size', "Place molecules in a plane of this thickness", 1, undef, undef, "Decimal >= 0");
+$Silico::sphere =    	make_flag('sphere', 'sphere', "Place molecules within a sphere of this radius", 1, undef, undef, 'DECIMAL >0');
+$Silico::invert =	make_flag('invert', 'invert', "Invert 3d structures");
+
+$Silico::xy = $Silico::xy; # Don't warn me
+$Silico::invert = $Silico::invert; # Don't warn me
+$Silico::sphere = $Silico::sphere;  # Don't warn me
+
+# Packing flags
+	make_flag('si', 'init-scale-factor', 	"Initial scale factor for atom-atom distance", 	1, 0.8, undef, 'DECIMAL >0');
+	make_flag('sm', 'min-scale-factor', 	"Minimum scale factor for atom-atom distance", 	1, 0.4, undef, 'DECIMAL >0');
+ 	make_flag('incr', 'max-try-increment', 	"Number of unsuccesful trials before reducing scale factor or increasing clash limit", 1, 1000);
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('solv');
+
+my $arg = $arguments[0];
+
+if (defined $nummols) {
+	silico_msg('n', "$nummols solvent molecules requested. Overriding density.\n");
+}
+
+if ($bilayer) {
+	silico_msg('n', "\nSolvating bilayer by setting 'plane' and 'invert' flags\n");
+	$Silico::plane = $bilayer*2;
+	$Silico::invert = 1;
+}
+
+# Read in the solvent molecule file if one exists.
+my $smol;
+if (defined $smolfile) {
+
+	my $smols = read_mol_any($smolfile);
+	
+	if (!defined $smols->[0]) {
+		mol_read_error($smolfile, 1);
+	}
+	
+	if (defined $smols->[1]) {
+		silico_msg('w', "Multiple molecules were found in file $smolfile!\n",
+				"Using only the first molecule (\"$smols->[0]{NAME}\") as the solvent.\n");
+	}
+	
+	$smol = $smols->[0];
+
+} else {
+
+	silico_msg('c', "\nSolavting with water\n\n");
+	$smol = create_water_molecule($res);
+}
+
+my $count = 0;
+foreach my $arg (@arguments) {
+
+	# Read in molecule
+	my $mols = read_mol_any($arg);
+
+	if (!defined $mols->[0]) {
+		mol_read_error($arg, 1);
+	}
+
+	foreach my $mol (@$mols) {
+		
+		++$count;
+		
+		silico_msg('c', "\n", "Molecule: ".($mol->{NAME} || $count), "\n"); 
+		
+		molecule_check_and_fix_connectivity ($mol) if (!get_sflag('nobond'));
+
+		# Set flags so that vdw radii of embedded molecule are not scaled down.
+		dont_scale_vdw($mol);
+
+		($cellx, $celly, $cellz) = calc_box_size($mol, $cellx, $celly, $cellz);
+		molecule_trans_to_centre($mol) if $trans;
+		
+		# Calculate required number of solvent molecules
+		$nummols = calc_molecule_density($mol, $smol, $cellx, $celly, $cellz, $density) if !$nummols;
+		
+		if ($nummols <= 0) {
+		
+			silico_msg('n', "Number of required molecules ($nummols) is <= 0. Skipping\n");
+			next;
+		}
+		
+		silico_msg('c', "\n", "** Adding $nummols solvent molecules **\n", "\n");
+		
+		$mol = molecule_solvate($mol, $smol, $mol->{CELL}, $nummols);
+	}
+
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+sub randomise_and_test_molecule_position {
+
+        my $mol = $_[0];
+        my $cell = $_[1];
+
+        my $count = 0;
+	
+        while(1) {
+	
+		++$count;
+
+          	molecule_random_move_cartesian($mol, undef, undef, $cell);
+		
+		last if test_all_shapes($mol, $cell);
+		
+                if ($count % 10000 == 0) {
+                        silico_msg ('w', "Could not generate molecule satisfying geometric constraints in $count steps\n");
+                }
+        }
+	
+        return $count;
+}
+
+#################
+# End of script #
+#################
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

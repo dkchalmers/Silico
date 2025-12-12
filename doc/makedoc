@@ -1,0 +1,200 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! makedoc
+#? Generate Silico documentation using a simple markup scheme to extract
+#  comments from Silico programs, libraries and data files.  
+#
+#. See silico_doc.pm for a description of the simple Silico markup syntax
+#  for documentation.
+#. Flags:
+#; -f Output format (txt, html, or md). Default is md
+#; -t Write out tagged text to file tagged.txt
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+use vars qw($SUBHASH);
+
+################
+# Start script #
+################
+
+silico_setup();
+print_title("makedoc");
+
+require silico_doc;
+
+my $format   = 	make_flag('f', 'format', "Output format (txt, html, md)", 1, 'md');
+         	make_flag('t', 'tagged', "Write out tagged text to file tagged.txt)");
+
+get_arguments2();
+
+# Validate format
+if (defined $format && $format ne 'txt' && $format ne 'html' && $format ne 'md') {
+	silico_msg('d', "Invalid format '$format'. Must be one of: txt, html, md\n");
+}
+
+my $version = `pwd`;
+chomp $version;
+$version =~ s/\/doc//;
+$version =~ s/.*\///;
+
+my $file_tagged = '';
+my $sub_tagged = '';
+my $intro_tagged = '';
+my $home = `pwd`;
+$home =~ s/(ilico\d\.\d\d).*/$1/;
+chomp $home;
+print "\nUsing silico parent directory: $home\n";
+
+$file_tagged .= "<STD>File documentation generated on ".`date`."";
+$sub_tagged .= "<STD>Subroutine documentation generated on ".`date`."";
+
+$intro_tagged .= read_doc("$home/doc/0intro");
+$file_tagged .= read_doc("$home/doc/0subroutines");
+
+my @dirs = qw(bin data lib local lib/local);
+
+# Files
+foreach my $dir (@dirs) {
+
+	$dir = "$home/$dir";
+	print "Dir: $dir\n";
+
+	next if !-e $dir;
+
+	my @files = glob("$dir/*");
+
+	$file_tagged .= "<HEAD2>Directory: $dir";
+
+	# Print file information
+	foreach my $file (@files) {
+	
+		next if $file =~ '0intro';
+		next if $file =~ '0subroutines';
+		next if $file =~ 'README';
+		next if $file =~ /\.new$/;
+		next if $file =~ /\.old$/;
+
+		# Read documentation from a file
+		my $t = read_doc($file);
+		$file_tagged .= $t;
+
+		# Extract all subroutines from a file
+		read_doc_subroutine($file);
+	}
+}
+
+# Subroutine index
+$sub_tagged .= "<HEAD2>Subroutine Index";
+my $i = 0;
+foreach (sort keys %$SUBHASH) {
+	$sub_tagged .= "<LIST><LINK#$i>$_";
+	++$i;
+}
+
+# Subroutine descriptions
+$sub_tagged .= "<HEAD2>Subroutine descriptions";
+$i = 0;
+foreach (sort keys %$SUBHASH) {
+
+	$sub_tagged .= "<HEAD3><ANCH$i>$_";
+	$sub_tagged .= $SUBHASH->{$_};
+	++$i;
+}
+
+# Write output in the specified format (default is md)
+my $outformat = $format || 'md';
+writetext($file_tagged, "$home/doc/doc", $outformat);
+writetext($sub_tagged,  "$home/doc/subroutines", $outformat);
+writetext($intro_tagged,  "$home/README", 'md');
+
+sub writetext {
+
+	my $tagged = $_[0];
+	my $filebase = $_[1];
+	my $format = $_[2];
+
+	my $filename = "$filebase.$format";
+
+	print "Writing $filename\n";
+	my $form;
+	if ($format eq 'txt') {
+		$form = format_doc_txt($tagged);
+	} elsif ($format eq 'html') {
+		$form = format_doc_html($tagged);
+	} elsif ($format eq 'md') {
+		$form = format_doc_markdown($tagged);
+	} else {
+		silico_msg('d', "Unknown format '$format' in writetext. Must be txt, html, or md.\n");
+	}
+
+	# Printout tagged text
+	if (get_sflag('t')) {
+
+		++$Silico::counter;
+
+		open ("TAGGED", ">", "tagged_$Silico::counter.txt") || die "Cant open tagged_$Silico::counter.txt";
+		print TAGGED "$tagged\n";
+		close (TAGGED);
+	}
+
+	open (OUTFILE, ">$filename")
+		|| silico_msg('d', "Can not create or open file $filename for writing!");
+	print OUTFILE $form;
+	close OUTFILE;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locates the Silico libraries and reads in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir, $Silico::data_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+	
+	use vars qw($data_dir);
+
+        if ($ENV{SILICO_HOME}) {
+
+                # Look for Silico location by environment variable
+		$Silico::FS = "/";
+                $Silico::home_dir = $ENV{SILICO_HOME}.$Silico::FS;
+		$Silico::data_dir = $Silico::home_dir."data".$Silico::FS;
+		$Silico::lib_dir = $Silico::home_dir."lib".$Silico::FS;
+                push @INC, substr($Silico::lib_dir, 0, -1);
+		
+        } else {
+
+                die "Error: The environment variable SILICO_HOME is not set\n";
+        }
+
+        require silico;
+}

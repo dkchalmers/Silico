@@ -1,0 +1,250 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_rama
+#? Constructs a Ramachandran plot for a molecule containing Alpha Amino acids
+#. Plotting is performed by 'xmgrace'
+#. Flags:
+#; -o		Output format (default: PostScript)
+#; -print	Print a hardcopy (default: off)
+#; -label       Label points with residue name
+#; -residue	Make one plot for each residue
+#; -mol   	Make one plot for each molecule in file. Use if file contains different molecular structures
+#; -ramol   	Make a separate .ramol file with all dihedral angles for one molecule on a single line
+#; -energy	Include energy in ramol output file
+#. Created: BPR September - October 2004
+#. $Revision: 1.15-60-g738dd58 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_rama", '$Revision: 1.15-60-g738dd58 $');
+
+require silico_rama;
+setup_flags();
+
+# Get flags
+my $by_residue  = make_flag('residue', undef, 'Make a separate plot for each residue');
+my $by_mol      = make_flag('mol',     undef, 'Make a separate plot for each molecule');
+my $ramol       = make_flag('ramol',   undef, 'Make a separate _ramol file with all dihedral angles for one molecule on a single line');
+my $cart        = make_flag('cart',    undef, 'Embed dihedrals in cartesian space by taking sin and cosine values of phi and psi');
+my $label       = make_flag('label',   undef ,'Label points with residue name');
+my $print       = make_flag('print',   undef, 'Produce a hardcopy instead of a file');
+my $plot        = make_flag('plot',    undef, 'Plot dihedrals using xmgrace', undef, 1);
+my $energy      = make_flag('energy',  undef, 'Include energy in ramol output file');
+my $oformat     = get_sflag('o') || 'ps';
+
+my @arguments = get_arguments2('>=1');
+
+my $options;
+if ($cart) {
+	$plot = 0;
+	$options = 'CART';
+	print "Option 'cart' chosen.  Data will not be plotted with xmgrace\n";
+}
+
+silico_msg('w', "Both 'residue' and 'mol' options have been selected.  Ignoring 'mol' option\n") if $ramol && $by_residue;
+
+foreach my $arg (@arguments) {
+
+	my $filebase = get_filebase($arg);
+	my $filebase2;
+	my $fr;
+	my $fr2;
+	my $fr_in;
+	my $molcount = 0;
+	my $parent_ramadata;
+	
+	my $ramalist;
+	@$ramalist = ();
+	
+	while (1) {
+	
+		my $mol = read_mol_single($fr_in, $arg);
+		last if !defined $mol;
+		if ($fr_in->{ERROR}) {
+			silico_msg ('e', "Could not read file $arg. Skipping\n");
+			last;
+		}
+	
+		++$molcount;
+		
+		if (!$by_mol && $molcount == 1) { 
+		
+			$parent_ramadata = mol_rama($mol);
+		}
+
+		my $ramadata = mol_rama($mol, $parent_ramadata);
+
+		my $atoms = $mol->{ATOMS};
+
+		if ($molcount == 1) {
+
+			print heading("Selected atoms\n");
+
+			foreach my $res (@{$mol->{RAMADATA}}) {
+
+				my $i = 0;
+				my $print;
+				my $string = '';
+				my $resstring = '';
+
+				foreach my $anum (@{$res->{ATOMNUMS}}) {
+	
+					# Terminal residues
+					if (!defined $anum) {
+						$string .= "   - -     ";
+						next;
+					}
+
+					my $resname = $atoms->[$anum]{SUBNAME};
+					my $resnum =  $atoms->[$anum]{SUBID};
+					$resstring = sprintf "Res: %4s %-6d  ", $resname, $resnum;
+
+					#atom_printout($atoms->[$anum]);
+				
+					my $name = $atoms->[$anum]{NAME};
+
+					$string .= sprintf "%4d %-4s  ", $anum, $name;
+					++$i;
+				}
+
+				print "$resstring$string\n";
+			}
+
+			print "\n";
+		}
+
+		push @$ramalist, $ramadata;
+		
+	}
+	
+	$molcount = 0;
+	foreach my $ramadata (@$ramalist) {
+	
+		++$molcount;
+		if ($by_residue) {
+		
+			my $res;
+			my $i = 0;
+			foreach $res (@{$ramadata}) {
+			
+				$i = sprintf"%03d", $i;
+				$filebase2 = "$filebase\_$i\_$res->{LABEL}";
+				
+				if ($molcount == 1) {		
+					$fr->{$filebase2} = ramaplot_open($filebase2,$options);
+				}
+				
+				write_rama_structure($ramadata, $fr->{$filebase2}, $i, $options);
+				++$i;
+			}
+			
+			
+		} else { 
+		
+			if ($by_mol) {
+				$filebase2 =  $filebase."_$molcount";
+			} else {
+				$filebase2 = $filebase;
+			}
+
+			if ($molcount == 1 || $by_mol) {
+				
+				if (!$ramol) {
+					$fr->{$filebase2} = ramaplot_open($filebase2, $options);
+				} else {
+					$fr2->{$filebase2} = ramaplot_by_mol_open($ramadata, $filebase2, $options);
+				}
+			}
+		
+			if (!$ramol) {
+				write_rama_structure($ramadata, $fr->{$filebase2}, undef, $options);
+			} else {
+				write_rama_structure_by_mol($ramadata, $fr2->{$filebase2}, $options) if $ramol;
+			}
+		}
+	}
+	
+	# Close open files and plot
+	foreach $filebase (keys %$fr) {
+		
+		close_molfile($fr->{$filebase});
+		ramaplot($filebase, $oformat, $print, $label) if $plot;
+	}
+
+	# Close files
+	foreach $filebase (keys %$fr2) {
+		
+		close_molfile($fr2->{$filebase});
+	}
+
+}
+		
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

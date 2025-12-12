@@ -1,0 +1,195 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_close_water
+#? Find water molecules that are directly hydrogen bonded to a protein
+#SF
+#. $Revision: 1.17.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $aminoacids;
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+use vars qw(@Amino_Acids $debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("find_close_water", '$Revision: 1.17.2.1.2.2 $');
+
+@arguments = get_arguments2('>=1');
+
+foreach (@Amino_Acids) {
+	$aminoacids->{$_} = 1;
+}
+
+@Amino_Acids = ();
+
+foreach $arg (@arguments) {
+	
+	my $i;
+	my $mol;
+	my $mols;
+	my $nummols;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any ($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$nummols = $#{$mols}+1;
+	
+	$i = 0;
+	
+	foreach $mol (@$mols) {
+		++$i;
+		silico_msg('c', "Molecule: $i of $nummols\n");
+		del_distant_water($mol);
+	}
+	
+	ensemble_printout($mols, 'all') if $debug;
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub del_distant_water {
+
+	my $mol = $_[0];
+
+	my $atom1;
+	my $cutoff = 3; # Approach distance for hydrogen bond
+	my $i;
+
+	foreach $atom1 (atoms($mol)) {
+		
+		my $atom2;
+		
+		#Only interested in atom1 being a water
+		next if ($atom1->{ELEMENT} ne 'O' && $atom1->{ELEMENT} ne 'H');
+		next if (!($atom1->{SUBNAME} eq 'HOH' || $atom1->{SUBNAME} =~ "TIP"));
+
+		#print "a1 $atom1->{NAME} $atom1->{NUM}\n";
+
+		foreach $atom2 (atoms($mol)) {
+
+			my $dist;
+			my $el;
+			my $flag = 0;
+			my $name;
+			
+			$el = $atom2->{ELEMENT};
+
+			next if $el eq 'C';
+
+			# Only interested in atom2 belonging to protein
+			$name = $atom2->{SUBNAME};
+			
+			if ($aminoacids->{$name}) {
+				$flag = 1;
+			}  else {
+				$flag = 1 if $el eq 'Mg';
+				$flag = 1 if $el eq 'Ca';
+				$flag = 1 if $el eq 'Na';
+				$flag = 1 if $el eq 'Fe';
+				$flag = 1 if $el eq 'Mn';
+				$flag = 1 if $el eq 'Zn';
+			}
+
+			next if !$flag;	
+
+			#print "$name\n";
+
+			$dist = distance($atom1, $atom2);
+
+			next if (!($dist < $cutoff));
+
+			#print "a1 $atom1->{NAME} $atom1->{NUM} a2 $atom2->{NAME} $atom2->{NUM} $dist\n";
+				
+			$atom1->{KEEP} = 1;
+			last;
+		}
+	}
+
+	for ($i = 0; $i <= $#{$mol->{ATOMS}}; ++$i) {
+		
+		my $atom1;
+		
+		$atom1 = $mol->{ATOMS}[$i];
+
+		#Only interested in atom1 being a water
+		next if ($atom1->{SUBNAME} ne 'HOH' && $atom1->{SUBNAME} ne "TIP");
+
+		next if $atom1->{KEEP};
+	
+		molecule_delete_atom($mol, $i);
+	}
+
+	molecule_pack($mol);
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

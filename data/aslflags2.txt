@@ -1,0 +1,33 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#!4  Atom specifier examples:
+#; ANAME:CA All atoms called 'CA'.
+#; ANAME:CA,CB,CG Returns all atoms called 'CA' or 'CB' or 'CD'.
+#; ANAME:CA,RESNAME:TRP All atoms called 'CA' in all residues called TRP
+#; ANAME:CA,SUBID:4 All atoms called 'CA' in residue number 4
+#; ELEMENT:!H All nonhydrogen atoms
+#; SEGID:PROT,SEGID:LIG All atoms with the SEGID set to PROT or LIG
+#. Successive atom specifications can be made. Each is separated by a '|'
+#; ANAME:CB|ANAME:CA|ANAME:CD Returns all atoms called 'CB', 'CA', 'CD'.
+#; ANAME:CA,RESNUM:1|ANAME:CA,RESNUM:4 Returns 'CA' atoms from residue 1 and 4.
+#. Atom specifiers are case sensitive.
+#>

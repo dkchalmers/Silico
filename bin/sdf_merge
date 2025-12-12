@@ -1,0 +1,380 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! sdf_merge
+#? Merge data from files based on structure or compound name
+#F
+#; -u Merge using this data field (default NAME)
+#; -sum Sum these fields. Must be suffixed with index (.a, .b, ...). Separated by '|';
+#; -min Lowest value from these fields 
+#; -s Sort output using this field (default glide_gscore.Rank.best)
+#SF
+#. Created: DKC 2000 and later
+#. $Revision: 1.1.2.4 $
+#>
+
+use strict;
+package Silico;
+
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $starttime = (times)[0];
+
+use vars qw($debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_smiles;
+
+print_title("sdf_merge", '$Revision: 1.1.2.4 $');
+
+
+my $merge_field = make_flag('f',   'merge-field', "Merge using this field [<field name> or SMILES]", 1, 'NAME');
+my $sum         = make_flag('sum', 'sum-fields',  "Sum these fields", 1, 'glide_gscore.a|glide_gscore.b|Score.c');
+my $best        = make_flag('min', 'min-fields',  "Min value from these field", 1, 'glide_gscore.Rank.a|glide_gscore.Rank.b|Score.Rank.c');
+my $sort 	= make_flag('s',   'sort-field',  "Sort output using this field", 1, "$sum.sum");
+
+my @arguments = get_arguments2('>=1');
+
+my $outbase = merge_filename(@arguments);
+
+print "outfile: $outbase.sdf\n";
+
+my $count = 0;
+my $label = "a";
+my $mols;
+
+my $keep;
+# SDF fields to keep
+@$keep = qw( 
+		bestamount
+		bestprice
+		CDATA
+		Glide_score
+		glide_gscore
+		glide_gscore.Rank
+		glide_gscore_ligeff
+		MFCD
+		Molecule_Name
+		NAME
+		NUM_HB
+		Pareto_Rank
+		SMILES
+		Score
+		Score.Rank
+		Tot_Q
+	);
+	
+my $hash;
+my $newkeep;
+
+foreach my $arg (@arguments) {
+	
+	my $mol;
+	my $fh_in;
+	
+	silico_msg('d', "File $arg not found") if !-e $arg;
+	silico_msg('c', "File: $arg Label: $label\n");
+	
+	while(1) {
+
+		my $mol = read_mol_single($fh_in, $arg);
+		last if !defined $mol;
+		
+		my $mkey;
+		if ($merge_field eq 'SMILES') {
+
+			$mkey = mol_smiles_string($mol);
+			
+		} elsif ($merge_field eq 'NAME' ){
+		
+			$mkey = $mol->{NAME};
+			$mkey =~ s/\s*\|.*//;
+			
+			print "name $mkey\n";
+		
+		} else {
+			$mkey = $mol->{SDF_DATA}{$merge_field};
+		}
+		
+		if (!defined $mkey) {
+			silico_msg('w', "Field $merge_field in molecule $mol->{NAME} ($mol->{SDF_DATA}{NAME}} is empty. Skipping\n");
+			next;
+		}
+		
+		my $data = $mol->{SDF_DATA};
+		my $nmol;
+		
+		if (!defined $hash->{$mkey}) {
+			
+			$hash->{$mkey} = $mol;
+		 	$nmol = $mol;
+			delete $mol->{SDF_DATA};
+			$mol->{COUNT} = $count;
+			push @$mols, $mol;
+			++$count;
+			
+		} else {
+			
+			$nmol = $hash->{$mkey};
+		}
+		
+		foreach my $key (keys(%{$data})) {
+		
+			$nmol->{SDF_DATA}{"$key.$label"} = $data->{$key};
+		}
+		
+		$nmol->{SDF_DATA}{"source.$label"} = $arg;
+	}
+	
+	foreach (@$keep) {
+		push @$newkeep, "$_.$label";
+	}
+	
+	++$label;
+}
+
+cleansdf($mols, $newkeep);
+
+
+foreach my $mol (@$mols) {
+
+	foreach (split " ", $sum) {
+
+		calc_sum($mol, $_, $label);
+	}
+
+	foreach (split " ", $best) {
+
+		calc_min($mol, $_, $label);
+	}
+}
+
+print heading('Sorting');
+
+@$mols = sort {($a->{SDF_DATA}{$sort} || 99999999) <=> ($b->{SDF_DATA}{$sort} || 99999999)} @$mols;
+
+my $outfile = "$outbase\_merge.sdf";
+$outfile =~ s/__/_/g;
+write_sdf($mols, $outfile);
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub calc_sum {
+
+	my $mol = $_[0];
+	my $flist = $_[1];
+
+	my @fields = split /\|/, $flist;
+	my $sum = 0;
+	my $count = 0;
+	foreach my $f (@fields) {
+			
+		my $v = $mol->{SDF_DATA}{$f};
+		
+		next if !$v;
+		$v =~ s/\s*//;
+		$sum += $v;
+		++$count;
+	}
+	
+	$mol->{SDF_DATA}{"$flist-sum"} = $sum || '';
+	$mol->{SDF_DATA}{"$flist-sum.n"} = $count;
+}
+
+sub calc_min {
+
+	my $mol = $_[0];
+	my $flist = $_[1];
+	
+	
+	my @fields = split /\|/, $flist;
+	my $best = 9999999999999999;
+	my $count = 0;
+	foreach my $f (@fields) {
+	
+		my $v = $mol->{SDF_DATA}{$f};
+		
+		next if !defined $v;
+		$v =~ s/\s*//;
+		next if $v eq '';
+		
+		if ($v < $best) {
+			$best = $v;
+		}
+		
+		++$count;
+	}
+	
+	$best = '' if $best == 9999999999999999;
+	
+	$mol->{SDF_DATA}{"$flist-min"} = $best;
+	$mol->{SDF_DATA}{"$flist-min.n"} = $count;
+}
+
+sub merge_filename {
+
+	#<
+	#? Merge filenames removing largest common substring and then adding this to the end
+	#>
+
+	my @a;
+	foreach (@_) {
+		push @a, get_filebase_short($_);
+	}
+	
+	my $lcss = $a[0];
+	foreach (@a) {
+	
+		$lcss = lcss($_, $lcss);
+	}
+
+	my $name = join "_", @a;
+	
+	$name =~ s/$lcss//g;
+	
+	$name.= "_".$lcss;
+	
+	$name =~ s/__/_/g;
+	
+	return $name;	
+}
+
+sub cleansdf {
+
+	#<
+	#? Clean up SDF_DATA
+	#>
+
+	my $mols = $_[0];
+	my @list = @{$_[1]};
+	
+	my $hash;
+	my $deleted;
+	my $retained;
+	foreach (@list) {
+		++$hash->{uc($_)};
+	}
+	
+	foreach my $mol (@$mols) {
+	
+		my @k = keys (%{$mol->{SDF_DATA}});
+		
+		foreach my $key (@k) {
+		
+			if ($hash->{uc($key)}) {
+				
+				++$retained->{$key};
+			} else {
+			
+				delete $mol->{SDF_DATA}{$key};
+				++$deleted->{$key};
+			}
+		}
+	}
+	
+	my @d = keys(%$retained);
+	print heading("Retained keys:\n");
+	my $i = 0;
+	foreach (sort @d) {
+		print "$_  ";
+		++$i;
+		print "\n" if $i % 5 == 0;
+	}
+	print "\n" if $i %5  != 0;
+	
+	@d = keys(%$deleted);
+	print heading("Deleted keys:\n");
+	$i = 0;
+	foreach (sort @d) {
+		print "$_  ";
+		++$i;
+		print "\n" if $i % 5 == 0;
+	}
+	print "\n";
+	print "\n" if $i %5  != 0;
+}
+	
+sub lcss  {
+
+	#<
+	#? Longest common substring.
+	#. Taken from here https://www.perlmonks.org/?node_id=249239
+	#>
+	
+    	my ($needle, $haystack) = @_;
+    	($needle, $haystack) = ($haystack, $needle)
+        if length $needle > length $haystack;
+
+    	my ($longest_c, $longest) = 0;
+    	for my $start (0..length $needle) {
+        	for my $len ( reverse $start+1 .. length $needle) {
+           	 	
+			my $substr = substr($needle, $start, $len);
+            		length $1 > $longest_c and ($longest_c, $longest) = (length $1, $1)
+			
+                	while $haystack =~ m[($substr)]g;
+        	}
+    	}
+    
+    	return $longest;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

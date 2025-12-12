@@ -1,0 +1,146 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! extract_lig_prot
+#? Split pdb file into protein and non-covalently bound ligands
+#. Structures are split up using connectivity
+#. Molecules with fewer than 'maxatom' and more 'minatom' atoms are assumed 
+#  to be ligands (This approach is a little simplistic.  It assumes that there 
+#  are no breaks in the protein chain.  However it IS able to extract peptide
+#  ligands from proteins)
+#. Flags:
+#; -maxatoms (Maximum ligand size)
+#; -minatoms (Minimum ligand size)
+#. Created: DKC 2000
+#. $Revision: 1.15-80-g67aad2a $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("extract_lig_prot", '$Revision: 1.15-80-g67aad2a $');
+
+require silico_split; 
+
+# Flags
+my $maxatoms = make_flag('max', 'maximum-atoms', "Maximum ligand size", 1, 100) ;
+my $minatoms = make_flag('min', 'minimum_atoms', "minimum ligand size", 1, 3);	# Should exclude waters with hydrogens
+
+my @arguments = get_arguments2('>=1');
+
+silico_msg('c', "\n",
+		"Maximum number of ligand atoms: $maxatoms\n",
+		"Minimum number of ligand atoms: $minatoms\n",
+		"\n");
+
+foreach my $arg (@arguments) {
+	
+	silico_msg('c', "File: $arg\n");
+	
+	my $filebase = get_filebase($arg);
+	
+	my $ensemble = read_mol_any($arg);
+	if (!defined $ensemble->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	my $ligands;
+	my $prot;
+	
+	@$ligands = ();
+	@$prot = ();
+	my $nlig = 0;
+	my $nprot = 0;
+		
+	foreach my $mol (@$ensemble) {
+
+		molecule_check_and_fix_connectivity($mol);
+		
+		my $newens = molecule_split($mol);
+		
+		foreach my $nmol (@$newens) {
+		
+			my $n = $nmol->{NUMATOMS};
+			print "numatoms: $n\n";
+			
+			if ($n >= $minatoms && $n <= $maxatoms) {
+				push (@$ligands, $nmol);
+				++$nlig;
+			}
+			if ($n > $maxatoms) {
+				push (@$prot, $nmol);
+				++$nprot;
+			}
+		}
+	}
+	
+	print "Found $nlig ligands and $nprot proteins\n";
+	
+	set_default_oappend('lig');
+	write_mol_any($ligands) if $nlig;
+	set_default_oappend('prot');
+	write_mol_any($prot) if $nprot;
+	
+}
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+	#<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

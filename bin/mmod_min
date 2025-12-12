@@ -1,0 +1,129 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mmod_min
+#? Minimise a molecule using Macromodel
+#F
+#; -ff Forcefield [opls2005, opls2001, amber94, amber, mm3, mm2] (default opls3)
+#; -s GBSA solvent [water chloroform octanol none] (default water)
+#; -min  Maximum number of steps for minimisation
+#; -grad Gradient cutoff for minimisation
+#; -minh Minimise hydrogens only
+
+#SF
+#. $Revision: 1.6.6.5 $
+#>
+
+use strict;
+package Silico;
+
+silico_setup();
+require silico_mmod;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+print_title("Mmod_min", '$Revision: 1.6.6.5 $');
+
+my $ff		= make_flag('ff',   'force-field',   "Forcefield [opls3, opls2005, opls2001, amber94, amber, mm3, mm2]", 1, 'opls3');
+my $solv	= make_flag('s',    'solvent',       "Solvent [water, chloroform, octanol, none]", 1, 'water');
+my $steps 	= make_flag('min',  'min-steps',     "Number of steps for minimisation", 1, 2000);
+my $grad	= make_flag('grad', 'min-gradient',  "Gradient cutoff for minimisation", 1, 0.1);
+		 #make_flag('mm',   'min-method',    "Minimisation method", 1, 'tcng');
+my $minh	= make_flag('minh', 'min-hydrogens', "Minimise hydrogen only");
+
+my @arguments = get_arguments2('>=1');
+
+foreach my $arg (@arguments) {
+
+	my $filebase = get_filebase($arg);
+	my $count = 0;
+	my $fh_in;
+	my $fh_out;
+	
+	while (my $mol = read_mol_single($fh_in, $arg)) {
+			
+		silico_msg('c', heading("* Minimising $mol->{NAME}: $count *\n"));
+
+		my $has_h = mol_has_h($mol);
+
+		if ($has_h == 0 || $has_h == 1) {
+			silico_msg('w', "Molecule has insufficient hydrogens. Adding them\n");
+			mol_add_hydrogens($mol);
+		}
+		
+		my $ens;
+		if ($minh) {
+			set_default_oappend('min-h');
+			$ens = mmod_min_h($mol, undef, $steps, $grad, $ff, $solv);
+		} else {
+			set_default_oappend('min');
+			$ens = mmod_min($mol, undef, $steps, $grad, $ff, $solv);
+		}
+		
+		foreach (@$ens) {
+			write_mol_single($fh_out, $_, "$filebase\_min");
+		}
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

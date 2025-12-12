@@ -1,0 +1,245 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_check
+#? Run a series of sanity checks on a molecule
+#. Calls ensemble_check (this principally checks the 
+#  integrity of the internal Silico data structures),
+#  mol_check_atom_overlap (to find badly overlapping
+#  atoms), mol_check_valences (to find atoms with an
+#  incorrect number of connected atoms)
+#. Writes out a mol2 file with subsets ERROR, OVERLAP, BONDLENGTH and VALENCE
+#  containing any atoms with errors
+#. It would be desirable to check for poor bond lengths
+#  and angles as well
+#. Flags
+
+#; -ce Check atom elements (default on)
+#; -co Check for atom overlap (default off)
+#; -cv Check atom valences (default on)
+#; -ca Check for aromatic bonds in non-aromatic systems (default on)
+#; -cb Check bondlengths (default on)
+#; -cr Check for distorted aromatic rings (default on)
+#; -amide Check for cis-amides and distorted trans amides (default on)
+#; -a  Run all checks
+#; -noconnect Do not create connection table
+#; -nofile Do not write an output .mol2 file for each input file
+#. Created: DKC 2000
+#. $Revision: 1.15-79-g6958a7c $
+#>
+
+use strict;
+package Silico;
+use Carp;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+
+# Atom things
+my $ce = 	make_flag('ce', undef,  'Check atom elements', 0, 1);
+my $co = 	make_flag('co', undef,  'Check for atom-atom overlaps', 0,  0);
+my $cv = 	make_flag('cv', undef,  'Check atom valences', 0,  1);
+my $cc = 	make_flag('cc', undef,  'Check atom valences', 0,  1);
+
+# Bond things
+my $ca =  	make_flag('ca', undef,  'Check for aromatic bonds in non-aromatic systems', 0,  1);
+my $cb = 	make_flag('cb', undef,  'Check bondlengths', 0,  1);
+
+# Functional group things
+my $cr = 	make_flag('cr', undef,  'Check for distorted aromatic rings', 0,  1);
+my $amide =  make_flag('amide', undef,  'Check for cis-amides and distorted amides', 0,  1);
+
+# All
+my $all = 	make_flag('a', undef,  'Run all checks', 0, 1);
+
+# Other stuff
+my $noconnect = 	make_flag('noconnect', undef,  'Do not create connection table');
+my $nofile = 	make_flag('nofile', undef,  'Do not write an output .mol2 file for each input file');
+
+$cc = $ce = $co = $cv = $ca = $cb = $cr = $amide = 1 if $all;
+
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('molcheck');
+
+foreach my $arg (@arguments) {
+	
+	silico_msg('c', "\n",
+			"** File: $arg **\n");	
+	
+	my $mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach my $mol (@$mols) {
+	
+		silico_msg('c', heading("Molecule data"));
+			
+		if (!$noconnect) {
+		
+			molecule_check_and_fix_connectivity($mol);
+				
+		} else {
+			silico_msg('c', "Keeping existing connection table.\n");
+		}
+		
+		mol_check($mol);
+		
+		if ($ce) {
+			silico_msg('c', heading("Atom elements"));
+			my $error = mol_check_elements($mol);
+			silico_msg('c', "Elements seem sane\n") if !$error;
+		}
+		
+		if ($co) {
+			silico_msg('c', heading("Atom overlap"));
+			my $error = mol_check_atom_overlap($mol);
+			silico_msg('c', "No bad atom overlaps\n") if !$error;
+			make_atomset($mol, "OVERLAP", "OVERLAP");
+		}
+		
+		if ($cv) {
+		
+			silico_msg('c', heading("Atom valences"));
+		
+			mol_has_h($mol);
+		
+			silico_msg('c', "Molecule has no hydrogens.\n") if !$mol->{HAS_HYDROGENS};
+			silico_msg('c', "Molecule has polar hydrogens.\n") if $mol->{HAS_HYDROGENS} == 1;
+			silico_msg('c', "Molecule has all hydrogens.\n") if $mol->{HAS_HYDROGENS} == 2 ;
+			
+			my $error = mol_check_valences($mol, !$mol->{HAS_HYDROGENS});
+			silico_msg('c', "Atom valences OK\n") if !$error;
+			make_atomset($mol, "VALENCE", "VALENCE");
+		}
+		
+		if ($cc) {
+		
+			my $charge = mol_calc_charge($mol, 1, 1);
+			if (check_data_type ($charge, 'DECIMAL', 1) == 1 && $charge != int ($charge)) {
+				silico_msg('w', "Overall charge of molecule \"$mol->{NAME}\" is not integral.\n",
+					"Charge calculated as: $charge\n");
+
+				$mol->{SDF_DATA}{CHARGE} = $charge;
+				$charge = sprintf "%8.4f", $charge;
+			}
+
+			printf "Molecule: $mol->{NAME}  Total partial charge: $charge\n\n";
+
+			
+			my $formal_charge = molecule_formal_charge($mol);
+			$mol->{SDF_DATA}{FORMAL_CHARGE} = $formal_charge;
+			printf "\tFormal charge: %8.4f\n", $formal_charge;
+		}
+		
+		if ($cb) {
+			silico_msg('c', heading("Bond lengths"));
+			my $error = mol_check_bondlengths($mol);
+			make_atomset($mol, "BONDLENGTH", "BONDLENGTH");
+			silico_msg('c', "Bond lengths OK\n") if !$error;
+
+			silico_msg('c', heading("Bond orders"));
+			$error = mol_check_bondorders($mol);
+			silico_msg('c', "Bond orders OK\n") if !$error;
+		}
+		
+		if ($cr) {
+			silico_msg('c', heading("Distorted aromatic rings"));
+			my $error = mol_check_distorted_rings($mol);
+			silico_msg('c', "No distorted rings\n") if !$error;
+			make_atomset($mol, "BENT_RING", "BENT_RING");
+		}
+		
+		# This goes after mol_check_distorted rings (though it is bond related)
+		# so there is knowledge of aromatic rings that are not 'planar'
+		
+		if ($ca) {
+			silico_msg('c', heading("Aromatic bonds"));
+			my $error = mol_check_aromatic_bonds ($mol);
+			silico_msg('c', "Aromatic bonds OK\n") if !$error;
+			make_atomset ($mol, "BAD_AROM_BOND", "BAD_AROM_BOND");
+		}
+		
+		if ($amide) {
+		
+			silico_msg('c', heading("Distorted amides"));
+			my $error = mol_check_amides ($mol);
+			silico_msg('c', "Amides OK\n") if !$error;
+			make_atomset  ($mol, "CIS_AMIDE", "CIS_AMIDE");
+			make_atomset ($mol, "DISTORTED_CIS_AMIDE", "DISTORTED_CIS_AMIDE");
+			make_atomset ($mol, "DISTORTED_TRANS_AMIDE", "DISTORTED_TRANS_AMIDE");
+
+		}
+		
+		make_atomset($mol, "ERROR", "ERROR");
+	
+		silico_msg('c', "\n");
+	}
+	
+	write_mol2($mols) unless $nofile;
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

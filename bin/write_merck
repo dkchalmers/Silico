@@ -1,0 +1,129 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_merck
+#? Read a molecule file and write a Merck format file
+#. Use: write_merck <file1> <file2> ...
+#F
+#; -b,--regenerate-bondorders Regenerate bondorders
+#SF
+#. Created: DKC 2001
+#. $Revision: 1.1.2.2.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $bondorders;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("write_merck", '$Revision: 1.1.2.2.2.1 $');
+
+require silico_merck;
+
+$bondorders = make_flag('b', 'regenerate-bondorders', 'Regenerate bondorders');
+
+$Silico::debug = $Silico::debug;
+
+@arguments = get_arguments2('>=1');
+
+foreach $arg (@arguments) {
+
+	my $i;
+	my $mol;
+	my $mols;
+	my $nummols;
+	
+	silico_msg('c', "File: $arg\n");
+	$mols = read_mol_any ($arg);
+	if (!defined $mols) {
+		silico_msg('e', "No molecule data read from file $arg!\n",
+				"Skipping.\n");
+		next;
+	}
+	
+	$nummols = $#{$mols};
+	
+	$i = 0;
+	foreach $mol (@$mols) {
+		
+		++$i;
+		
+		print "Molecule: \"$mol->{NAME}\" (molecule $i of $nummols)\n";
+		mol_check($mol);
+	
+		if ($bondorders) {
+			# Reset all bonds to single and regenerate bondorders
+			silico_msg('n', "Regenerating bondorders\n");
+			molecule_generate_bondorders($mol, 1);
+		}
+	}
+	
+	ensemble_printout($mols, 'all') if $Silico::debug;
+	write_mol_any($mols, undef, 'mrk');
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

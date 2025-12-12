@@ -1,0 +1,106 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! mol_unsplit
+#? Combine molecule files into a multiple molecule file
+#. To combine molecules into a single molecule see 'mol_combine'
+#F
+
+#SF
+#. Created: DKC 2000 and on (and on)
+#. $Revision: 1.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_unsplit", '$Revision: 1.1.2.2 $');
+
+# Get flags
+#my $renumber_res 	= make_flag('rr', 'renumber-residues', "Renumber residues of split molecules starting from 1");
+
+my @arguments = get_arguments2('>=1');
+my $filebase = get_filebase($arguments[0]);
+
+my $fh_out;
+
+foreach my $arg (@arguments) {
+	
+	chomp $arg;
+	print "File: $arg\n";
+
+	my $ext = get_fileext($arg);
+		
+	my $fh_in;
+	my $molcount = 0;
+	while (my $mol = read_mol_single($fh_in, $arg)) {
+		
+		++$molcount;
+		silico_msg('c', "Read $molcount molecules") if $molcount%1000 == 0;
+		write_mol_single($fh_out, $mol, "$filebase\_unsplit");
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

@@ -1,0 +1,220 @@
+#!/usr/bin/perl -w
+#!/usr/bin/perl -d:DProf -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_rings
+#? Test script to find rings, planar rings and aromatic rings in a molecule.
+#  Temperature factor and occupancies of the output pdb file are set.  
+#  The Mol2 output file contains the rings, aromatic rings and planar rings 
+#  in static sets.
+#. Flags:
+#; -r Maximum depth of search for rings
+#; -o Write out molecule structure files with rings marked
+#; -timing
+#; -debug rings
+#. $Revision: 1.23.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $notrec;
+my $out;
+my $ringsize;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("find_rings", '$Revision: 1.23.2.1.2.1 $');
+
+require silico_rings;
+
+$ringsize = 	make_flag('r', undef,  "Ringsize", 1,  20);
+$out =  	make_flag('w', 'write-rings',  "Write molecule output files with rings marked", 1);
+$notrec = 	make_flag('n', undef,  "Use non-recursive ring finder");
+$Silico::debug_rings = make_flag('dr', 'debug-rings', "Print special ring debugging information");
+@arguments = get_arguments2('>=1');
+
+$Silico::debug_rings = $Silico::debug_rings;
+
+silico_msg('c', "\n",
+		"Finding rings to ring size: $ringsize\n");
+
+foreach $arg (@arguments) {
+	
+	my $filebase;
+	my $i = 0;
+	my $mol;
+	my $mols;
+	my $nummols;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$filebase = get_filebase($arg);
+	$mols = read_mol_any($arg, undef, undef, "quiet");
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$nummols = $#{$mols}+1;
+		
+	foreach $mol (@$mols) {
+		
+		my $prings;
+		my $ring;
+		my $ringcount;
+		my $rings;
+		
+		++$i;
+
+		silico_msg('c', "Molecule: \"$mol->{NAME}\" (number $i of $nummols)\n");
+		
+		molecule_check_and_fix_connectivity($mol);
+		make_aromatic_bonds($mol);
+
+		#&molecule_find_rings($mol, $ringsize);
+		($rings, $prings, undef) = molecule_find_rings($mol, $ringsize, $notrec);
+
+		silico_msg('q', "\tRngType\tNumber\tSize\tResNam\tRes#\tAt1Nm\tPlanar\tA'matic\tAtoms      \tBondorders\tHet      \tType\n",
+				"\n");
+
+		my $ringset;
+		my $set = 0;
+		my $type;
+		foreach $ringset ($rings, $prings, $mol->{ARINGS}) {
+			$ringcount = 1;
+			++$set;
+			$type = 'all';
+			$type = 'planar' if $set == 2;
+			$type = 'arom' if $set == 3;
+			print "\n";
+			foreach $ring (@$ringset) {
+				
+				my $aromatic;
+				my $atom1;
+				my @bolist;
+				my $label;
+				my $planar;
+				my $std;
+				
+				@bolist = find_bondorders_ring($ring, $mol);
+
+				$atom1 = $mol->{ATOMS}[${$ring}[0]];
+
+				($planar, $aromatic)  = is_ring_planar($mol, $ring);
+				
+				# Heterocycles
+				(undef, $std) = standardise_ring_by_heteroatoms ($ring, $mol);
+				$label = identify_heterocycle($ring, $mol);
+				$label = 'none' if !defined $label;
+
+				silico_msg('q', "\t$type\t$ringcount\t".($#{$ring}+1)."\t$atom1->{SUBNAME}\t$atom1->{SUBID}\t$atom1->{NAME}\t$planar\t$aromatic\t",
+						"'".join (" ",@$ring)."'\t",
+						"'".join (" ",@bolist)."'\t",
+						"$std\t$label\n");
+				++$ringcount;
+			}
+		}
+
+		silico_msg('q', "\n");
+	}
+	
+	if ($out) {
+
+		# Use temperature factor to colour rings
+		# and add atoms to static sets
+		foreach $mol (@$mols) {
+			
+			my $i;
+			
+			for ($i = 0; $i < $#{$mol->{ATOMS}}; ++$i) {
+
+				my $atom;
+				
+				$atom = $mol->{ATOMS}[$i];
+
+				$atom->{TEMP} = 0;
+				# planar atom
+				if ($atom->{PLANAR_ATOM}) {
+				$atom->{TEMP} = 5;
+				}
+				if ($atom->{RINGS}[0]) {
+					$atom->{TEMP} += 10;
+				}
+				if ($atom->{PLANAR_RING}) {
+					$atom->{TEMP} += 20;
+				}
+			}
+		
+			make_atomset($mol, 'RINGS', 'RINGS');
+			make_atomset($mol, 'PRINGS', 'PRINGS');
+		}
+		
+		write_pdb($mols, "$filebase"."_new.pdb");
+		write_mol2($mols, "$filebase"."_new.mol2");
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

@@ -1,0 +1,361 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! vesicle_builder
+#? Build a vesicle using periodic boundary conditions.
+#. Lipid molecules are reoriented along their polar axis, unless the -no flag is specified
+#. Usage: vesicle_builder <lipid_file> -x <cellx> -y <celly> -z <cellz> -n1 <number of lipids layer1> 
+#  [ -n2 <number of lipids layer2> -e <molecule to embed> ]
+#F
+
+#; -n1_<number> 	Number of instances of lipid to use to create monolayer 1 (outer)
+#; -n2_<number>		Number of instances of lipid to use to create monolayer 2 (inner)
+#; -e_<filename> 	Embed molecule filename
+
+#. Geometry flags
+#; -rad_<dist> 		Outside radius of vesicle
+#; -x_<dist> |
+#; -y_<dist> |		Dimensions of the cell in each direction
+#; -z_<dist> |
+#; -no                  Do not reorient the polar axis of embedded lipid molecules
+
+#. Packing flags
+#; -rand_<number>	Number of lipid bonds to randomise
+#; -trans		Translate the embedded molecule to the cell centre
+#; -es_<number>		Additional distance addedd between the mid-points of the bilayers
+#; -si_<factor> 	Initial scale factor for atom-atom packing distance (default 0.8)
+#; -sm_<factor> 	Minimum scale factor for atom-atom packing distance (default 0.4)
+#; -incr_<number> 	Number of unsuccesful moleucle packing trials before reducing the scale factor.  Default 100
+
+
+#SF
+#. Created: DKC 2001 and later
+#. $Revision: 1.1.2.9 $
+#>
+
+use strict;
+package Silico;
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("vesicle_builder", '$Revision: 1.1.2.9 $');
+require silico_rbox;
+
+# Command-line flags
+my $numlipids1 = 	make_flag('n1', 'numlipids1', 'number of copies of lipid files in layer 1', 1, undef, 1, 'INT');
+my $numlipids2 = 	make_flag('n2', 'numlipids2', 'number of copies of lipid files in layer 2', 1, undef, undef, 'INT');
+my $embedname =  	make_flag('e', 'embed-name', "Molecule to be embedded in box", 1);
+
+# Geometry flags
+my $radius =     	make_flag('rad', 'outside-radius', "Outside radius of vesicle", 1, undef, 1, 'DECIMAL >0');
+my $cellx =		make_flag('x', undef, 'box x', 1, undef, undef, 'DECIMAL > 0');
+my $celly =		make_flag('y', undef, 'box y', 1, undef, undef, 'DECIMAL > 0');
+my $cellz =		make_flag('z', undef, 'box z', 1, undef, undef, 'DECIMAL > 0');
+my $noorient =          make_flag('no', 'no-orent', 'Do not reorient polar axis of embedded lipid molecules before packing');
+
+use vars qw($plane $cylinder $thick $length $holes $hole_rad $origin $hole_vectors $hole_rad );
+$Silico::plane = 	make_flag('plane', 'plane-size', "Place molecules in a plane of this thickness", 1, undef, undef, "Decimal >= 0");
+$Silico::cylinder = 	make_flag('cylinder', 'cylinder', "Make cylinder or rod of this radius along Z axis", 1, undef, undef, 'DECIMAL >0');
+$Silico::holes =     	make_flag('holes', 'holes', "Number of holes to make in surface or sphere", 1, undef, undef);
+$Silico::hole_rad =  	make_flag('hr', 'hole-radius', "Radius of holes distributed on sphere", 1, undef, undef);
+$Silico::origin =	make_flag('origin', 'holes-origins', "Origin points for hole vectors [o, a, b, c]", 1, 'a', undef);
+
+# Packing flags
+my $random =		make_flag('rand', 'randomise-dihedrals', "Randomise lipid dihedrals by this number of steps", 1, 0);
+my $trans =		make_flag('trans', 'translate-embeded', "Translate the embedded molecule to the centre of cell");
+my $extrasep =		make_flag('es', 'extra-sep', 'Add extra distance between bilayer centres', 1, 2);
+			make_flag('si', 'init-scale-factor', "Initial scale factor for atom-atom distance", 1, 0.8, undef, 'DECIMAL >0');
+			make_flag('sm', 'min-scale-factor', "Minimum scale factor for atom-atom distance", 1, 0.4, undef, 'DECIMAL >0');
+			make_flag('incr', 'max-try-increment', "Reduce allowed distance between atoms or increase maximum number of clashes after this number of unsuccesful trials", 1, 100);
+
+# Command-line arguments
+my @arguments = get_arguments2('>=1');
+my $arg = $arguments[0];
+
+# Default filename append string
+set_default_oappend('vesicle');
+
+if ($Silico::holes) {
+	$Silico::hole_vectors = holes($Silico::holes);
+	silico_msg('d', "Hole radius not set\n") if !defined $Silico::hole_rad;
+}
+origins($Silico::origin);
+
+
+$numlipids2 = $numlipids1 if !defined $numlipids2;
+silico_msg('d', "Number of lipids to add not specified!\n",
+		"Please set a number of lipid replicates using the -n1 flag (and optionally -n2).\n") if !$numlipids1;
+		
+
+my $chain = 'A';
+my $segid = 'A';
+my $embed;
+my ($obase, $oformat);
+if ($embedname) {
+
+        print (heading("Molecule to be embeded\n"));
+
+        # Read in molecule to be embedded
+        my $e = read_mol_any ($embedname) || mol_read_error($embedname, 1);
+
+        $embed = $e->[0];
+        silico_msg('w', "Multiple molecules found in 'embed' file. Only the fist molecule will be used\n") if defined $e->[1];
+
+        # Check and fix the connectivity in this molecule
+        molecule_check_and_fix_connectivity($embed);
+
+        ($cellx, $celly, $cellz) = calc_box_size($embed, $cellx, $celly, $cellz, 0, 15);
+	
+	my $min = $cellx;
+	foreach ($celly, $cellz) {
+		$min = $_ if $_ < $min;
+	}
+
+	silico_msg('d', "Vesicle radius ($radius) is larger than half the smallest cell dimension ($min)\n") if $radius > $min/2;
+
+        my ($maxchain, $maxsegid) = find_maxchain_maxsegid($embed);
+	
+	$chain = $maxchain;
+	pdb_increment_chain($chain); 
+	$segid = ++$maxsegid;
+	
+	print "Starting numbering from chain: $chain segid: $segid\n";
+	
+        ($obase, $oformat) = get_ofilename2($embed);
+}
+
+my $default = 10; # Default extent of box around embedded molecule
+verify_input_data($cellx, "decimal > 0", "Box size (X)", $default);
+verify_input_data($celly, "decimal > 0", "Box size (Y)", $default);
+verify_input_data($cellz, "decimal > 0", "Box size (Z)", $default);
+
+my $cell;
+@$cell = ($cellx, $celly, $cellz);
+
+# Read in lipid structures
+my $comp;
+my $maxy = 0 ;
+my $maxz = 0 ;
+foreach $arg (@arguments) {
+	
+	my $ens;
+	$ens = read_mol_any($arg);
+
+	# Get output filename from lipid filename if we haven't already got one
+	($obase, $oformat) = get_ofilename2($ens) if !defined $obase;
+	mol_read_error($arg, 1) if !defined $ens->[0];
+	
+	my $i = 0;
+	foreach my $mol (@$ens) {
+
+		++$i;
+		push @$comp, $mol;
+		
+		# Check and fix the connectivity in this molecule
+       		molecule_check_and_fix_connectivity($mol);
+		
+		if (!$noorient) {
+			print "Orienting molecule\n";
+			mol_orient_polarity($mol, 0, 0, 1);
+		}
+
+		my @dim = molecule_centre($mol);
+		my $dx = $dim[0]-$dim[3];
+		my $dy = $dim[1]-$dim[4];
+		my $dz = $dim[2]-$dim[5];
+		
+		silico_msg('c', "Lipid component $i.  Size: x: $dx y: $dy z: $dz\n");
+		$maxy = $dy if $dy > $maxy;	
+		$maxz = $dz if $dz > $maxz;	
+	}
+}
+
+if ($embed && $trans) {
+	print "Translating embedded molecule to centre of cell";
+	molecule_trans_to_centre($embed, 'cell', 'all', $cell);
+}
+
+silico_msg('c', "Writing cell with corner at origin: box.pdb\n", "\n");
+printbox(0, 0, 0, $cellx, $celly, $cellz);
+
+# Generate copies of lipid(s) and put them in to ensembles layer1 and layer2
+my $num_components1->[0] = $numlipids1;
+my $num_components2->[0] = $numlipids2;
+$num_components1 = check_number_components($comp, $num_components1, $numlipids1);
+my $layer1 = make_molecule_copies($comp, $num_components1, $chain, $segid, $random, $oformat);
+
+$num_components2 = check_number_components($comp, $num_components2, $numlipids2);
+$chain = $layer1->[0]{ATOMS}[-1]{CHAIN};
+++$segid;
+pdb_increment_chain($chain);
+my $layer2 = make_molecule_copies($comp, $num_components2, $chain, $segid, $random, $oformat);
+
+my $molcount1 = $#{$layer1}+1;
+my $molcount2 = $#{$layer2}+1;
+silico_msg ('c', "Generated $molcount1 lipids in each layer1\n");
+silico_msg ('c', "Generated $molcount2 lipids in each layer2\n");
+
+# Globals to communicate with packing routine
+my $sep = $maxz;
+my $totalsep = $sep + $extrasep;
+
+print "Distance between monolayer centres: $totalsep = lipid length ($sep) + extra ($extrasep)\n";
+
+#
+#  Calculations
+#
+
+my $r1 = $radius - $totalsep/2;
+my $r2 = $radius - 3*$totalsep/2;
+
+my ($a1, $a2, $al1, $al2, $ratio);
+if ($molcount1 ) {
+	$a1 = calc_area_sphere_with_holes($r1, $Silico::holes, $Silico::hole_rad);
+	$al1 = $a1/$molcount1;
+	printf "Layer 1: Area (at centre of lipid): %.1f Area per lipid: %.1f A^2/lipid\n", $a1, $al1;
+}
+if ($molcount2) {
+	$a2 = calc_area_sphere_with_holes($r2, $Silico::holes, $Silico::hole_rad);
+	$al2 = $a2/$molcount2;
+	printf "Layer 2: Area (at centre of lipid): %.1f Area per lipid: %.1f A^2/lipid\n", $a2, $al2;
+	$ratio = $a1/$a2;
+}
+print "\n";
+if ($ratio) {
+	printf "Ratio of areas (outer:inner): %.2f:1\n", $ratio;
+}
+(printf "Actual radio of lipids (outer:inner): $molcount1:$molcount2 = %.2f:1\n", $molcount1/$molcount2) if $molcount2;
+
+foreach my $mol (@$layer1) {
+	
+	# Move molecule COM to 0,0,0
+	molecule_trans_to_centre($mol, 'origin');
+	#molecule_rot_angle_z($mol, 360);
+
+	# Move along Z axis
+	molecule_translate($mol, $cell->[0]/2, $cell->[1]/2, $cell->[2]/2 + $radius - $totalsep/2)
+}
+
+foreach my $mol (@$layer2) {
+	
+	# Move molecule COM to 0,0,0
+	molecule_trans_to_centre($mol, 'origin');
+	#molecule_rot_angle_z($mol, 360);
+	# Flip it
+	molecule_rot_angle_x($mol, 180);
+	# Move along Z axis
+	molecule_translate($mol, $cell->[0]/2, $cell->[1]/2, $cell->[2]/2 + $radius - 3*$totalsep/2);
+}
+
+
+# Pack molecules 
+silico_msg('c', heading ("Packing molecules\n"));
+
+my $model;
+silico_msg('c', heading ("Packing $molcount1 molecules in layer 1\n"));
+$model = pack_molecules($layer1, $embed, $cell);
+silico_msg('c', heading ("Packing $molcount2 molecules in layer 2\n"));
+$model = pack_molecules($layer2, $model, $cell);
+
+
+# Set cell
+$model->{CELL} = $cell;
+$model->{CELL_ALPHA} = $model->{CELL_BETA} = $model->{CELL_GAMMA}= 90;
+
+# Write output
+write_mol_any($model, $obase, $oformat);
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub randomise_and_test_molecule_position {
+
+        my $mol = $_[0];
+        my $cell = $_[1];
+
+        my $count = 0;
+	
+        while(1) {
+	
+		++$count;
+
+          	#molecule_random_move_cartesian($mol, undef, undef, $cell);
+		molecule_translate($mol, -$cell->[0]/2, -$cell->[1]/2, -$cell->[2]/2);
+		molecule_rot_angle_x($mol, rand(360));
+		molecule_rot_angle_y($mol, rand(360)); 
+		molecule_translate($mol, $cell->[0]/2, $cell->[1]/2, $cell->[2]/2); 
+		
+		my $p = ($Silico::plane && test_plane($mol, $cell, $Silico::invert)) || !$Silico::plane;
+		my $c = ($Silico::cylinder && test_cylinder($mol, $cell, $Silico::invert)) || !$Silico::cylinder;
+		my $h = ($Silico::holes && test_cylinder_arb($mol, $cell, $Silico::invert)) || !$Silico::holes;
+		
+		last if ($p && $c && $h);
+				
+                if ($count % 1000 == 0) {
+			print "holes $Silico::holes p $p c $c h $h\n";
+                        silico_msg ('w', "Could not generate molecule satisfying geometric constraints in $count steps\n");
+                }
+        }
+	
+	#print "c $count\n" if $count != 1;
+
+        return $count;
+}
+
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

@@ -1,0 +1,109 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol2split
+#? Fast split program to divide a mol2 file into smaller files without parsing
+#  the file
+#. Default is 100 structures per file
+#F
+#; -s_<style> Output style [numbered, fnumbered] (default: fnumbered)
+#; -n_<number> Number of structures in each output file (default: 100)
+#; -d_<dir> Output directory (default: working directory)
+#SF
+#. $Revision: 1.17.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $dir;
+my $ostyle;
+my $size;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol2split", '$Revision: 1.17.2.1.2.2 $');
+
+require silico_split;
+
+$ostyle = make_flag ('s',   'output-style', "Output style (numbered, fnumbered)", 1, 'fnumbered');
+$size = make_flag('n', 'number-of-structures', "Number of structures in output file", 1, 100);
+$dir = make_flag('d', 'output-directory', "Output directory", 1);
+
+@arguments = get_arguments2('>=1');
+
+$dir ||= '';
+
+foreach $arg (@arguments) {
+	
+	if (!get_flag('quiet', 'l')) {
+		print "\n";
+		print "Splitting file \"$arg\" into files containing at most $size structures\n";
+	}
+	
+	mol2_fastsplit($arg, $dir, $ostyle, $size);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

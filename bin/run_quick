@@ -1,0 +1,172 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! run_quick
+#? Minimise a molecule using Quick (https://github.com/merzlab/QUICK)
+#. Use: runquick [flags] <molecule_file>
+#
+#, Default method is: DFT
+#, Default basis set is: B3LYP 
+#, Default calculation is: OPTIMIZE
+#, Other default options: CUTOFF=1.0d-10 DENSERMS=1.0d-6 
+#, Performs a simple check to see if a molecule is a radical. 
+#F
+#; -method HF or DFT (default DFT)
+#; -f_<string> Functional [STO-3G, B3LYP, cc-pVDZ, etc]. (Default B3LYP)
+#; -b_<string> Basis set [6-311G, 6-311G*, cc-pvDZ, etc]
+#; -c_<int> Formal charge
+#; -scf_<int> Max cycles for SCF convergence
+#; -densrms_<val> DENSRMS option [1.0d-6]
+#; -cutoff_<val> CUTOFF option [1.0d-6]
+#; -scf_<int> Maximum steps for SCF convergence (Default 30)
+#; -noopt Do not use OPTIMIZE keyword
+#; -steps_<int> Steps for OPTIMIZE keyword (0 gives Quick default)
+#,
+#. Run options
+#; -cuda Use CUDA version
+#; -mpi Use MPI version
+#; -n_<val> Number of CPUs to use with MPI version (default 6)
+#; -x_<path> Path to Quick executable
+
+#.
+#SF
+#. Created: DKC 17.10.2021 and on and on
+#. $Revision: 1.1.2.8 $
+#>
+
+use strict;
+package Silico;
+
+use Time::HiRes;
+
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("run_quick", '$Revision: 1.1.2.8 $');
+
+require silico_quick;
+require silico_schedule;
+
+# Quick flags
+my $keywords = setup_quick_flags();
+
+# Local job options
+my $h =  make_flag('h',       'hostlist',         "Host list. Space separated string (use quotes)", 1);
+	 make_flag('maxj',    'max-jobs',         "Maximum number of GPU jobs(quick, gmx, desmond, etc) allowed per GPU", 1, 1, undef,  "INTEGER > 0");
+
+my @arguments = get_arguments2('>=1');
+
+# Read flag settings
+my $method = get_lflag('functional') || get_sflag('method');
+my $basis =  get_lflag('basis');
+
+proc_hostlist($h);
+
+set_default_oappend("$method\_$basis");
+
+# The main loop
+foreach my $arg (@arguments) {
+
+	my $mols = read_mol_any($arg);
+		
+	# Run quick
+	my $completed = run_quick_batch($mols);
+	
+	process_quick_out($completed);
+		
+	write_mol_any($completed);
+	
+}
+
+
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub check_dist {
+
+	my $mol = $_[0];
+	my $dist = $_[1] || 2.2;
+	
+	foreach my $atom1 (atoms($mol)) {
+
+		foreach my $atom2 (connected($atom1, $mol)) {
+		
+			#next if $atom1 == $atom2;
+			
+			my $d = distance($atom1, $atom2);
+			
+			#print "$mol->{NAME} $atom1->{NUM} $atom2->{NUM} d $d\n";
+			
+			 if ($d > $dist) {
+			 
+			 	return 0;
+			 }
+		}
+	}
+	
+	return 1;
+}
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

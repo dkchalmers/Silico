@@ -1,0 +1,135 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_scale
+#? Scale a molecule by a factor
+#F
+#; -f_<number> Scale factor
+#; -o_<format> Output file format (default: input format)
+#; -nocell Do not scale unit cell
+#SF
+#. $Revision: 1.14.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("scale", '$Revision: 1.14.2.1.2.2 $');
+
+my $factor = make_flag('f', 'scale-factor', 'Scale factor', 1, undef, 1, 'DECIMAL > 0');
+my $nocell = make_flag('nocell', 'no-scale-cell', 'Do not scale unit cell');
+
+$Silico::debug = $Silico::debug;
+
+@arguments = get_arguments2('>=1');
+set_default_oappend('scaled');
+
+print "Using scale factor: $factor\n" if (!quiet());
+
+foreach $arg (@arguments) {
+
+	my $i;
+	my $mol;
+	my $mols;
+	my $oformat;
+	
+	print "File: $arg\n" if (!quiet());
+	$mols = read_mol_any ($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$i = 0;
+	foreach $mol (@$mols) {
+		
+		my $atom;
+
+		if (defined $mol->{CELL} && !$nocell) {
+			foreach (@{$mol->{CELL}}) {
+				$_ *= $factor;
+			}
+			silico_msg('c', "Scaling periodic cell: scaled cell dimensions @{$mol->{CELL}}\n");
+		}
+		
+		++$i;
+		print "Molecule: $i of ".($#{$mols}+1)."\n" if !get_flag('quiet', 'l');
+
+		foreach $atom (atoms($mol)) {
+			$atom->{X} *= $factor;
+			$atom->{Y} *= $factor;
+			$atom->{Z} *= $factor;
+		}
+	}
+	
+	ensemble_printout($mols, 'all') if $Silico::debug;
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

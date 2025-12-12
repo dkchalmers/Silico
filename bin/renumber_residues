@@ -1,0 +1,146 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! renumber_residues
+#? Renumber residues in a file. Number SUBCOUNTs sequentially from
+#  1, and make the SUBID for any atom the same as the SUBCOUNT for
+#  that atom.
+#  Optionally, use a different start and a different increment.
+#. Molecule is sorted before renumbering.  All hydrogens are forced to have
+#  the same residue name, residue number, chain and segid as their parent
+#  heavy atom
+#F
+#; -s_<number> New starting residue number (default 1)
+#; -i_<number> New increment (default 1)
+#; -i_<number> New increment (default 1)
+#; -ns Do not sort molecule
+#SF
+#. $Revision: 1.15-48-g5c3506e $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("renumber_residues", '$Revision: 1.15-48-g5c3506e $');
+
+setup_flags();
+
+my $start = make_flag('s', 'start', "ID of first residue", 1, 1, undef, "INTEGER > 0");
+my $nosort = make_flag('ns', 'no-sort', "Do not sort residues");
+my $increment = make_flag('i', 'increment', "Increment between residues", 1, 1, undef, "INTEGER >= 0");
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('renum');
+
+foreach my $arg (@arguments) {
+		
+	my $i;
+	
+	silico_msg('c', "\n", "File: $arg\n");
+		
+	my $filebase = get_filebase($arg);
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$i = 1;
+	foreach my $mol (@$mols) {
+		
+		my $subcount = $start;
+
+		++$i;
+		
+		silico_msg('c', "\n","Molecule: $i of ".($#{$mols}+1)."\n");
+		
+		molecule_check_and_fix_connectivity($mol);
+				
+		sanitise_hydrogens($mol);
+		
+		pdb_molecule_sort_atoms($mol) if !$nosort;
+		
+		my $residues = molecule_get_residues($mol);
+		
+		foreach my  $residue (@$residues) {
+	
+		
+			print "$residue->[0]{NAME} $residue->[0]{SUBID}\n";
+			
+			foreach my $atom (@$residue) {
+				$atom->{SUBCOUNT} = $subcount;
+				$atom->{SUBID} = $subcount;
+			}
+			
+			$subcount += $increment;
+		}
+	}
+	
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

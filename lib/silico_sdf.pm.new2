@@ -1,0 +1,1722 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! silico_sdf.pm
+#? Silico routines to read and write MDL sdf and rdf files.
+#. $Revision: 1.69.2.8.2.8 $
+#>
+
+use strict;
+package Silico;
+
+sub read_sdf {
+
+	#<
+	#? Read an SDF file.
+	#. SDF data fields are stored in mol->{SDF_DATA}{<propertyname>}
+	#; Requires: Filename - optional: start structure number (counting
+	#  from 1), number of structures to read, options string
+	#; Returns: Ensemble or undef if file open failed.
+	#. Options:
+	#, QUIET - do not print messages
+	#, NOPARSE - only read SDF data fields.  Do not parse molecule (Faster if we are
+	#  only interested in the data fields)
+	#>
+
+	my $infile = $_[0];
+	my $start = $_[1] || get_flag('ss', 's') || 1;
+	my $max_molecules = $_[2] || get_flag('ms', 's');
+	my $options = uc ($_[3] || '');
+	
+	my $fr;
+	my $i;
+	my $mol;
+	my $molcount; # Number of molecules read
+	my $molecules;
+	my $readcount; # Number of molecules in SDF file
+
+	# Options
+	add_option("QUIET", $options) if (quiet()) || $options =~ /\bQUIET\b/;
+	remove_option("QUIET", $options) if $Silico::debug;
+
+	$fr = open_molfile($fr, $infile, undef, 'read', $options);
+        if ($fr->{ERROR}) {
+		silico_msg('e', "Can not open file $infile\n");
+		return undef;
+	}
+
+	if ($options !~ /\bQUIET\b/) {
+		silico_msg('c', "Reading sdf file: $_[0]");
+		silico_msg('c', " using $options") if $options;
+		silico_msg('c', "\n");
+	}
+
+	$readcount = 0;
+	$molcount = 0;
+	while (1) {
+	
+		# Skip structures up to starting number
+		++$readcount;
+		next if ($readcount < $start);
+		if ($max_molecules && $molcount >= $max_molecules) {
+			silico_msg ('c', "Read maximum molecules $max_molecules. Finishing\n")  if $options !~ /\bQUIET\b/;
+			last;
+		}
+		$mol = read_sdf_molecule($fr, $options);
+		last if !defined $mol;
+		push @$molecules, $mol;
+		++$molcount;
+	}
+
+	close (INFILE);
+
+	foreach $mol (@$molecules) {
+		if ($mol->{WARN}{NAMESET}) {
+			silico_msg('n', "Found code identifier '$mol->{WARN}{NAMESET}'.  Using this to set molecule name\n");
+			last;
+		}
+	}
+	
+	close_molfile($fr);
+		
+	return $molecules;
+}
+
+sub read_sdf_single { 
+
+        #< 
+        #? Read in a single record from an sdffile.
+        #; Requires: file record, options
+        #. See read_pdb for general description
+        #; Returns: molecule or undef
+        #>
+
+        my $fr = $_[0];
+        my $options = uc ($_[1] || '');
+
+        my $mol;
+                
+        $mol = read_sdf_molecule($fr, $options);
+
+        # Process errors in here 
+
+        return $mol;
+}
+
+sub read_sdf_molecule {
+
+	my $fr = $_[0];
+	my $options = $_[1];
+
+	my $dataname;
+	my $element;
+	my $i;
+	my $line;
+	my $mol;
+	my $na;
+	my $name;
+	my $noparse = 0;
+	$noparse = 1 if $options =~ /\bNOPARSE\b/;
+
+	if (!$noparse) {
+
+		# Parse 'molfile' portion of sdf file
+		$mol = read_sdf_atoms_bonds($fr);
+		return undef if !defined $mol;
+		$mol->{SOURCE_FILE_TYPE} = 'sdf';
+		$Silico::debug && silico_msg('n', "Reading mol: $mol->{NAME}\tat:$mol->{NUMATOMS}\n");
+
+	} else {
+	
+		# Read without parsing 'molfile' portion of sdf file
+		$mol->{NUMATOMS} = 0;
+		$mol->{NUMBONDS} = 0;
+		$mol->{SOURCE_FILE_TYPE} = 'sdf_noparse';
+		@{$mol->{ATOMS}} = ();
+
+		$i = -1;
+		while (defined ($line = silico_readline($fr))) {
+		
+			++$i;
+	
+			if ($i == 0) {
+				$mol->{NAME} = $line;
+				next;
+			} elsif ($i == 1) {
+				$mol->{MDL_LINE} = $line;
+				next;
+			} elsif ($i == 3) {
+				$na = substr($line,0,3)
+			} 
+			
+			if ($i > 3 && $i <= 3 + $na) {
+				$element = substr($line,31,3);  # atom symbol
+				$element =~ s/ //g;
+				++$mol->{NUMHEAVY} if $element ne 'H';
+				++$mol->{FORMULA}{$element};
+			}
+
+			$mol->{MOL} .= "$line\n";
+			last if $line =~ /^M *END/;
+		}
+		
+		# We have reached the end of the file
+		return undef if !defined $line;
+		
+		if (!$line =~ /^M *END/) {
+			silico_msg('e', "SDF file is malformed.  Last line of SDF file is not 'M END'\n");
+			return undef;
+		}
+	}
+
+	$mol->{SOURCE_FILE_NAME} = $fr->{FILENAME};
+	++$fr->{MOL_READ_COUNT};
+
+	# Data block
+	while (defined ($line = silico_readline($fr))) {
+		
+		last if $line =~ /\$\$\$\$/;
+
+		# Data header contains '< .key. >'
+		if ($line =~/<(.*)>/) {
+			
+			$line =~ /<(.*)>/;
+			$dataname = $1;
+
+			$mol->{SDF_DATA}{$dataname} = '';
+			
+			# Data fields are terminated by a blank line.
+			# Read all data 'till the first blank line
+
+			while (1) {
+
+				$line = silico_readline($fr);
+
+				if (!defined $line || $line =~ /^\s*$/) {
+					last;
+				}
+				$mol->{SDF_DATA}{$dataname} .= "$line\n";
+			}
+			chomp $mol->{SDF_DATA}{$dataname};
+		}
+	}
+	
+	# Transfer special fields to molecule name
+	foreach $dataname (keys %{$mol->{SDF_DATA}}) {
+	
+		# Remove trailing carriage returns
+		chomp $mol->{SDF_DATA}{$dataname};
+		chomp $mol->{SDF_DATA}{$dataname};
+	
+		# Maybridge catalog (code)
+		# SPECS databases (IDNUMBER)
+		# ID code (possibly Chembridge) (ID)
+		if (!$mol->{NAME} && ($dataname eq 'code' || $dataname eq 'IDNUMBER' || $dataname eq 'ID')) {
+			$name = $mol->{SDF_DATA}{$dataname};
+			$name =~ s/\W//g;
+			$mol->{NAME} = $name;
+			$mol->{WARN}{NAMESET} = $dataname;
+		}
+	}
+	
+	# Test that we have not exeeded maximum molecule energy or count set by flags
+	return undef if test_energy_molcount($fr, $mol);
+	
+	return $mol;
+}
+
+sub read_rdf {
+
+	#<
+	#? Read an RDF file.
+	#. Only reads structure at present (no data).  Sets the 3D flag on
+	#  all structures
+	#; Requires: Filename - optional: start structure number (counting
+	#  from 1), number of structures to read.
+	#; Returns: Undef if file open failed.
+	#>
+
+	my $infile = $_[0];
+	my $start = $_[1] || 1;
+	my $max_molecules = $_[2];
+	my $options = uc ($_[3] || '');
+
+	my $fr;
+	my $line;
+	my $molcount; # Number of molecules read
+	my $rereg;
+	my $molecules;
+	my $readcount; # Number of molecules in SDF file
+	my $tmol;
+
+	add_option("QUIET", $options) if (quiet());
+	remove_option("QUIET", $options) if $Silico::debug;
+	
+	if (!open_file(*INFILE, $infile)) {
+		silico_msg('e', "Can not open file $infile for reading!\n");
+		return undef;
+	}
+
+	silico_msg('c', "Reading rdf file: $_[0]\n") if $options !~ /\bQUIET\b/;
+	
+	$readcount = 0;
+	$molcount = 0;
+	READMOL: while (1) {
+	
+		$line = silico_readline($fr);
+		
+		if (!defined $line) {
+			last if $molcount;
+			silico_msg('e', "No molecules were read!\n");
+			return undef;
+		}
+		
+		# Read ISIS ID code
+		if ($line =~ /\$REREG/) {
+			(undef, $rereg)  = split ' ', $line;
+			next;
+		}
+
+		#Skip lines until $DATAUM $MFMT;
+		next if ($line !~ /\$DATUM \$MFMT/);
+	
+		# Skip structures up to starting number
+		++$readcount;
+		last READMOL if ($max_molecules && $molcount+1 > $max_molecules);
+		
+		if ($readcount < $start) {
+			
+			next READMOL;
+		}
+
+		$tmol = read_sdf_atoms_bonds($fr);
+		last READMOL if !defined $tmol;
+		$molecules->[$molcount] = $tmol;
+		$molecules->[$molcount]{REREG} = $rereg || '';
+		# Add Isis REREG field to molecule name
+		$molecules->[$molcount]{NAME} = "<".($rereg || '')."> ".$molecules->[$molcount]{NAME};
+		$molecules->[$molcount]{SOURCE_FILE_TYPE} = 'rdf';
+		$molecules->[$molcount]{SOURCE_FILE_NAME} = $infile;
+		++$molcount;
+	}
+
+	close (INFILE);
+
+	return $molecules;
+}
+
+sub read_sdf_atoms_bonds {
+
+	#<
+	#? Read in atoms and bonds in MDL mol format V2000 or V3000 formats
+	#. Called from read_sdf and read_rdf.  Sets flag $mol->{HAS_BAD_GEOM}, $mol->{GEOM_2D} to 1
+	#  if molecule is 2D
+	#; Requires: file record
+	#; Returns: Molecule, undef if end of file
+	#>
+
+	my $fr = $_[0];
+	my $atom;
+	my $atom2;
+	my $batom1;
+	my $batom2;
+	my $bond_type;
+	my $bond_stereo;
+	my $bond_top;
+	my $bond_react;
+<<<<<<< HEAD
+	my $i;
+=======
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+	my $line;
+	my $mol;
+	my %namecount;
+	my $z_zerocount = 0;
+	
+	
+	
+	# Header
+	defined ($mol->{NAME} = silico_readline($fr)) || return undef;	# Molecule name
+	defined ($mol->{MDL_LINE} = silico_readline($fr)) || return undef;	# MDL information
+	defined ($mol->{COMMENT} = silico_readline($fr)) || return undef;	# Comment line
+	
+	# Set GEOM flag if header says molecule is 2D
+	if (length ($mol->{MDL_LINE}) < 20 || substr($mol->{MDL_LINE}, 20 ,2) eq '2D') {
+		$mol->{HAS_BAD_GEOM} = 1;
+		$mol->{GEOM_2D} = 1;
+	}
+	
+	
+	# Counts line
+	$line = silico_readline($fr);
+	if (!defined $line) {
+		silico_msg('e', "Error reading sdf counts line!\n");
+		return undef;
+	}
+
+	# Kludge to stop substring outside string errors
+	$line .= "                                        ";
+		
+	@{$mol->{ATOMS}} = ();
+	$mol->{NUMATOMS} = substr($line,0,3);      # number of atoms
+	$mol->{NUMBONDS} = substr($line,3,3);	   # number of bonds
+	$mol->{NUM_ATOMLISTS} = substr($line,6,3); # number of atom lists
+	# Obsolete entry goes here
+	$mol->{CHIRAL_FLAG} = substr($line,12,3);  # chiral flag
+	$mol->{NUM_STEXT} = substr($line,15,3);	   # number of stext entries
+	# Removed obsolete entries
+	#$mol->{NUM_RECOMP} = substr($line,18,3);   # number of reaction components +1
+	#$mol->{NUM_REACT} = substr($line,21,3);	   # number of reactants
+	#$mol->{NUM_PROD} = substr($line,24,3);	   # number of products
+	#$mol->{NUM_INTER} = substr($line,27,3);	   # number of intermediates
+	#$mol->{NUM_ADPROP} = substr($line,30,3);   # number of additional properties
+	$mol->{CTAB_VER} = substr($line,34,6);	   # ctab version 
+	$mol->{CTAB_VER} =~ s/ //g;
+
+	if ($mol->{CTAB_VER} eq 'V2000') {
+		read_sdf_atoms_bonds_V2000($fr, $mol);
+	} elsif ($mol->{CTAB_VER} eq 'V3000') {
+		read_sdf_atoms_bonds_V3000($fr, $mol);
+	} else {
+		silico_msg('d', "Unsupported sdf version $mol->{CTAB_VER}");
+	}
+	
+<<<<<<< HEAD
+	print "c '$mol->{CTAB_VER}'\n";
+	
+	
+	if ($mol->{CTAB_VER} eq 'V2000') {
+	
+		read_sdf_atoms_bonds_V2000($fr, $mol);
+	
+	} elsif ($mol->{CTAB_VER} eq 'V3000') {
+	
+		read_sdf_atoms_bonds_V3000($fr, $mol);
+	
+	} else {
+	
+		silico_msg('d', "Unsupported sdf version $mol->{CTAB_VER}");
+	
+	}
+	
+=======
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+	return $mol;
+}
+	
+sub read_sdf_atoms_bonds_V2000 {
+
+
+	my $fr = $_[0];
+	my $mol  = $_[1];
+	
+	my $atom;
+	my $atom2;
+	my $batom1;
+	my $batom2;
+	my $bond_type;
+	my $bond_stereo;
+	my $bond_top;
+	my $bond_react;
+<<<<<<< HEAD
+	my $i;
+=======
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+	my $line;
+	my %namecount;
+	my $z_zerocount = 0;
+
+<<<<<<< HEAD
+
+=======
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+	# Table for translation of formal charges to charge specifier
+	#               code  formal_charge
+	my %fcharges = qw(	1     3 
+			2     2
+			3     1
+			5    -1 
+			6    -2 
+			7    -3); 
+	
+	
+	# Atom block
+	for (my $i=0; $i < $mol->{NUMATOMS}; ++$i) {
+		$line = silico_readline($fr);
+		
+		if (!defined $line) {
+			silico_msg('e', "Error reading sdf atom records!\n");
+			return undef;
+		}
+
+		# Premature end of record (produced by concord)
+		if ($line =~ /^\$\$\$\$/) {
+			silico_msg('e', "Premature end of sdf atom records!\n",
+					"Returning empty molecule.\n");
+			sdf_error_mol($mol);
+			return $mol;
+		}
+			
+		# Kludge to stop substring outside string errors
+		$line .= "                                                                  ";
+
+		my $atom;
+		my $chgs;
+		my $x;
+		my $y;
+
+		$atom->{X} = substr($line,0,10);		# x
+		$atom->{Y} = substr($line,10,10);		# y
+		$atom->{Z} = substr($line,20,10);		# z
+		$atom->{ELEMENT} = substr($line,31,3);		# atom symbol
+		
+		# Not essential below here
+		# $x is used to prevent hash element from being assigned if it is empty
+		$x = st2(substr($line,34,2));
+		$atom->{MDIFF} =   $x if $x;		# mass difference
+		
+		$chgs = st(substr($line,36,3));		# formal charge (should be overriden by properties block)
+		$atom->{FORMAL_CHARGE} = $fcharges{int($chgs)} if $chgs;
+		
+		$x = st(substr($line,39,3));		# stereo parity
+		$atom->{SPARITY} =  $x if $x;
+		
+		$x = st(substr($line,42,3));		# hydrogen count +1
+		$atom->{HCOUNT} = $x if $x;	
+		
+		$x = st(substr($line,45,3)) if $x;	# stereo care box
+		$atom->{SCARE} = $x if $x;
+		
+		$x = st(substr($line,48,3));		# Valence. Note the SDF definition of valence  may
+		$atom->{NUM_ATTACHED_ATOMS} = $x if $x;	# differ from the silico idea of valence (number of bonds
+							# with a double bond counted as 2)
+		
+		#$atom->{HDESIG} = substr($line,51,3));	# H0 designator (Redundant)
+		#$atom->{RCOMPT} = substr($line,54,3));	# reaction component type (Obsolete)
+		#$atom->{RCOMPN} = substr($line,57,3));	# reaction component number (Obsolete)
+		
+		$x = st(substr($line,60,3));		# atom-atom mapping number
+		$atom->{AAMAP} = $x if $x;	
+		
+		$x = st(substr($line,63,3));		# inversion/retention flag
+		$atom->{INV} = $x if $x;	
+		
+		$x = st(substr($line,66,3));		# exact exchange flag
+		$atom->{EXEX} = $x if $x;	
+		
+		$atom->{ELEMENT} =~ s/ //g;
+		++$mol->{NUMHEAVY} if $atom->{ELEMENT} ne 'H';
+
+		$atom->{NUM} = $i+1;
+		$atom->{ELEMENT_NUM} = element_symbol2number($atom->{ELEMENT});
+		$atom->{NAME} = $atom->{ELEMENT}.++$namecount{$atom->{ELEMENT}};
+		$atom->{SUBNAME} = 'SUB';
+		$atom->{SUBID} = 1;
+		
+		++$z_zerocount if $atom->{Z} == 0;
+
+		$mol->{ATOMS}[$i] = $atom;
+		
+		# Formal charges
+		# 0 = uncharged or value other than these, 1 = +3, 2 = +2, 3 = +1,   
+		# 4 = doublet radical, 5 = -1, 6 = -2, 7 = -3 
+		# Note: radicals are ignored
+	}
+
+	# Bond block
+	for (my $i=0; $i < $mol->{NUMBONDS}; ++$i) {
+
+		$line = silico_readline($fr);
+
+		if (!defined $line) {
+			silico_msg('e', "Error reading sdf bond records!\n");
+			return undef;
+		}
+		# Premature end of record (produced by concord)
+		if ($line =~ /^\$\$\$\$/) {
+			silico_msg('e', "Premature end of sdf bond records!\n",
+					"Returning empty molecule.\n");
+			sdf_molecule_error($mol);
+			return $mol;
+		}
+		
+		# Kludge to stop substring outside string errors
+		$line .= "                                        ";
+			
+ 		$batom1 = substr($line,0,3);		# atom1
+		$batom2 = substr($line,3,3);		# atom2
+
+		$bond_type = substr($line,6,3);		# bond type 1, 2, 3 -> s,d,t, 4 aromatic,
+							# 5 single or double, 6 single or aromatic
+							# 7 double or aromatic, 8 any
+		$bond_stereo = substr($line,9,3);	# bond stereo: 0 not stereo, 1 up, 4 either
+							# 6 down, double bonds 0.
+							# 3 cis or trans double bond
+		# Unused variable here
+		$bond_top = substr($line,18,3);		# bond topology: 1 ring, 2 chain
+		$bond_react = substr($line,21,3);	# reacting centre status
+		
+		$bond_type =~ s/ //g;
+		$bond_stereo =~ s/ //g;
+		$bond_top =~ s/ //g;
+		$bond_react =~ s/ //g;
+		
+		$bond_type ||= 1;
+		$bond_stereo ||= 0;
+		$bond_top ||= 0;
+		$bond_react ||= 0;
+		
+		--$batom1;
+		--$batom2;
+
+		$atom = $mol->{ATOMS}[$batom1];
+		$atom2 = $mol->{ATOMS}[$batom2];
+	
+		# Make connection tables
+		# ----------------------
+
+		push @{$atom->{CONNECT}}, $batom2;
+		push @{$atom->{BORDERS}}, $bond_type;
+		push @{$atom->{BTOP}}, $bond_top;
+		push @{$atom->{BSTEREO}}, $bond_stereo;
+		push @{$atom->{BREACT}}, $bond_react;
+
+		$atom2 = $mol->{ATOMS}[$batom2];
+
+		push @{$atom2->{CONNECT}}, $batom1;
+		push @{$atom2->{BORDERS}}, $bond_type;
+		push @{$atom2->{BTOP}}, $bond_top;
+		push @{$atom2->{BSTEREO}}, $bond_stereo;
+		push @{$atom2->{BREACT}}, $bond_react;
+	}
+	
+	# Set bad geometry flag if the z value was zero for the majority of atoms
+	if ($z_zerocount > $mol->{NUMATOMS}/2 + 2) {
+		$mol->{HAS_BAD_GEOM} = 1;
+	}
+	
+	# SDF files include formal charges (great!). Add them up
+	count_formal_charges($mol);
+
+	return $mol;
+}
+
+sub read_sdf_atoms_bonds_V3000 {
+
+<<<<<<< HEAD
+
+	my $fr = $_[0];
+	my $mol  = $_[1];
+			
+			
+	# M  V30 BEGIN CTAB
+=======
+	my $fr = $_[0];
+	my $mol  = $_[1];
+	
+	my $z_zerocount = 0;
+	
+	# M  V30 BEGIN CTAB
+
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+	my $line = silico_readline($fr);
+	$line =~ "BEGIN CTAB" || (print ("line:$line") && silico_msg('d', "Expecting 'BEGIN CTAB'"));
+	
+	# Counts
+	$line = silico_readline($fr);
+	$line =~ "COUNTS" || (print ("line:$line") && silico_msg('d', "Expecting 'COUNTS'"));
+	my @f = split " ", $line;
+	$mol->{NUMATOMS} = $f[3] || 0;
+	$mol->{NUMBONDS} = $f[4] || 0;
+	
+	# M  V30 BEGIN ATOM
+	$line = silico_readline($fr);
+	$line =~ "BEGIN ATOM" || (print ("line:$line") && silico_msg('d', "Expecting 'BEGIN ATOM'"));
+	
+<<<<<<< HEAD
+	my @atributes = qw(CHG CFG RAD VAL MASS HCOUNT STBOX INVRET ATTCHPT RGROUPS SUBST UNSTAT RBCNT);
+	
+	# Atom block
+	for (my $i=0; $i < $mol->{NUMATOMS}; ++$i) {
+		
+		$line = silico_readline($fr);
+		
+=======
+	my @attributes = qw(CHG CFG RAD VAL MASS HCOUNT STBOX INVRET ATTCHPT RGROUPS SUBST UNSTAT RBCNT);
+	my %namecount;
+	
+	# Atom block
+	for (my $i=0; $i < $mol->{NUMATOMS}; ++$i) {
+		$line = silico_readline($fr);
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+		if (!defined $line) {
+			silico_msg('e', "Error reading sdf atom records!\n");
+			return undef;
+		}
+
+		# Premature end of record (produced by concord)
+		if ($line =~ /^\$\$\$\$/) {
+			silico_msg('e', "Premature end of sdf atom records!\n",
+					"Returning empty molecule.\n");
+			sdf_error_mol($mol);
+			return $mol;
+		}
+<<<<<<< HEAD
+			
+=======
+
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+		# Kludge to stop substring outside string errors
+		$line .= "                                                                  ";
+
+		my $atom;
+<<<<<<< HEAD
+		
+		my @f = split " ", $line;
+
+		$atom->{NUM} = $i+1;
+		$atom->{X} = $f[4];		# x
+		$atom->{Y} = $f[5];		# y
+		$atom->{Z} = $f[56];		# z
+		$atom->{ELEMENT} = $f[3];	# atom symbol
+		
+		LOOP: foreach my $j (8 .. $#f) {
+			
+			my @g = split "=", $f[$j];
+		
+			foreach my $at (@attributes) {
+			
+				
+				next if $at ne $g[0];
+				
+				if ($at eq 'CHG') {
+				
+=======
+		my @f = split " ", $line;
+
+		#print "f @f\n";
+
+		$atom->{NUM} = $i+1;
+		$atom->{X} = $f[4];		# x
+		$atom->{Y} = $f[5];		# y
+		$atom->{Z} = $f[6];		# z
+		$atom->{ELEMENT} = $f[3];	# atom symbol
+		$atom->{ELEMENT_NUM} = element_symbol2number($atom->{ELEMENT});
+		$atom->{NAME} = $atom->{ELEMENT}.++$namecount{$atom->{ELEMENT}};
+
+		LOOP: foreach my $j (8 .. $#f) {
+			my @g = split "=", $f[$j];
+			foreach my $at (@attributes) {
+				next if $at ne $g[0];
+				if ($at eq 'CHG') {
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+					$atom->{CHARGE} = $g[1];
+					next LOOP;
+				}
+				if ($at eq 'MASS') {
+<<<<<<< HEAD
+				
+					$atom->{ISOTOPE_MASS} = $g[1];
+					next LOOP;
+				}
+				
+				$atom->{$g[0]} = $g[1];
+				
+				next LOOP;
+			}
+			
+			silico_msg ('w', "Unrecognised atom attribute '$f[$j'");
+		}
+		
+		
+		++$z_zerocount if $atom->{Z} == 0;
+
+		push @{$mol->{ATOMS}}, $atom;
+		
+	}
+
+	# Bond block
+	for ($i=0; $i < $mol->{NUMBONDS}; ++$i) {
+
+		$line = silico_readline($fr);
+
+		if (!defined $line) {
+			silico_msg('e', "Error reading sdf bond records!\n");
+			return undef;
+		}
+		# Premature end of record (produced by concord)
+		if ($line =~ /^\$\$\$\$/) {
+			silico_msg('e', "Premature end of sdf bond records!\n",
+					"Returning empty molecule.\n");
+			sdf_molecule_error($mol);
+			return $mol;
+		}
+		
+		# Kludge to stop substring outside string errors
+		$line .= "                                        ";
+			
+ 		$batom1 = substr($line,0,3);		# atom1
+		$batom2 = substr($line,3,3);		# atom2
+
+		$bond_type = substr($line,6,3);		# bond type 1, 2, 3 -> s,d,t, 4 aromatic,
+							# 5 single or double, 6 single or aromatic
+							# 7 double or aromatic, 8 any
+		$bond_stereo = substr($line,9,3);	# bond stereo: 0 not stereo, 1 up, 4 either
+							# 6 down, double bonds 0.
+							# 3 cis or trans double bond
+		# Unused variable here
+		$bond_top = substr($line,18,3);		# bond topology: 1 ring, 2 chain
+		$bond_react = substr($line,21,3);	# reacting centre status
+		
+		$bond_type =~ s/ //g;
+		$bond_stereo =~ s/ //g;
+		$bond_top =~ s/ //g;
+		$bond_react =~ s/ //g;
+=======
+					$atom->{ISOTOPE_MASS} = $g[1];
+					next LOOP;
+				}
+				$atom->{$g[0]} = $g[1];
+				next LOOP;
+			}
+			silico_msg ('w', "Unrecognised atom attribute '$f[$j]'");
+		}
+
+		++$z_zerocount if $atom->{Z} == 0;
+		push @{$mol->{ATOMS}}, $atom;
+	}
+
+	# M  V30 END ATOM
+	$line = silico_readline($fr);
+	$line =~ "END ATOM" || (print ("line:$line") && silico_msg('d', "Expecting 'END ATOM'"));
+
+	# M  V30 BEGIN BOND
+	$line = silico_readline($fr);
+	$line =~ "BEGIN BOND" || (print ("line:$line") && silico_msg('d', "Expecting 'BEGIN BOND'"));
+
+	# Bond block
+	for (my $i=0; $i < $mol->{NUMBONDS}; ++$i) {
+
+		$line = silico_readline($fr);
+
+		#if (!defined $line) {
+			#silico_msg('e', "Error reading sdf bond records!\n");
+			#return undef;
+		#}
+
+		my @f = split " ", $line;
+
+ 		my $batom1 = $f[4];		# atom1
+		my $batom2 = $f[5];		# atom2
+
+		my $bond_type = $f[3];	# bond type 1, 2, 3 -> s,d,t, 4 aromatic,
+						# 5 single or double, 6 single or aromatic
+						# 7 double or aromatic, 8 any
+
+		# 
+		# Note Need to implement more things in here
+		#
+
+		my $bond_stereo;		# bond stereo: 0 not stereo, 1 up, 4 either
+						# 6 down, double bonds 0.
+						# 3 cis or trans double bond
+		my $bond_top;	# bond topology: 1 ring, 2 chain
+		my $bond_react;	# reacting centre status
+		
+		$bond_type =~ s/ //g;
+		#$bond_stereo =~ s/ //g;
+		#$bond_top =~ s/ //g;
+		#$bond_react =~ s/ //g;
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+		
+		$bond_type ||= 1;
+		$bond_stereo ||= 0;
+		$bond_top ||= 0;
+		$bond_react ||= 0;
+		
+		--$batom1;
+		--$batom2;
+
+<<<<<<< HEAD
+		$atom = $mol->{ATOMS}[$batom1];
+		$atom2 = $mol->{ATOMS}[$batom2];
+=======
+		my $atom = $mol->{ATOMS}[$batom1];
+		my $atom2 = $mol->{ATOMS}[$batom2];
+>>>>>>> a6be8112ced84ac91e83f9e12ab3865486d4d2b9
+	
+		# Make connection tables
+		# ----------------------
+
+		push @{$atom->{CONNECT}}, $batom2;
+		push @{$atom->{BORDERS}}, $bond_type;
+		push @{$atom->{BTOP}}, $bond_top;
+		push @{$atom->{BSTEREO}}, $bond_stereo;
+		push @{$atom->{BREACT}}, $bond_react;
+
+		$atom2 = $mol->{ATOMS}[$batom2];
+
+		push @{$atom2->{CONNECT}}, $batom1;
+		push @{$atom2->{BORDERS}}, $bond_type;
+		push @{$atom2->{BTOP}}, $bond_top;
+		push @{$atom2->{BSTEREO}}, $bond_stereo;
+		push @{$atom2->{BREACT}}, $bond_react;
+	}
+	
+	# Set bad geometry flag if the z value was zero for the majority of atoms
+	if ($z_zerocount > $mol->{NUMATOMS}/2 + 2) {
+		$mol->{HAS_BAD_GEOM} = 1;
+	}
+	
+	# SDF files include formal charges (great!). Add them up
+	count_formal_charges($mol);
+
+	return $mol;
+}
+
+sub st {
+
+	my $x;
+
+	if (!defined $_[0]) {
+		$x = '';
+	} elsif ($_[0] eq '   ') {
+	
+		$x = '';
+	} else {
+		$x = int($_[0]);
+	}
+	
+	return $x;
+}
+sub st2 {
+
+	my $x;
+
+	if (!defined $_[0]) {
+		$x = '';
+	} elsif ($_[0] eq '  ') {
+	
+		$x = '';
+	} else {
+		$x = int($_[0]);
+	}
+	
+	return $x;
+}
+
+sub write_sdf {
+	
+	#<
+	#? Write an SDF file.
+	#. Additional properties are written from mol->{SDF_DATA}{<propertyname>}
+	#. All aromatic bonds are converted to kekule representation
+	#; Requires: ensemble (or molecule), filename.
+	#; Returns: Undef if file open fails otherwise returns one.
+	#; Note:  Aromatic bondorders are only allowd in database searches.
+	#  therefore aromatic bonds must be converted to single/double.  This
+	#  is currently done for aromatic rings, carboxylates and
+	#  guanadines.  Hence, database searches containing aromatic bonds will
+	#  be modified adversely.
+	#
+	#. Options:
+	#, BOND - force bond generation
+	#, NOOND - do not generate bonds
+	#, QUIET - do not print 'Writing' line
+	#, 2D - Set 2D flag in header (default 3D).  May be requred for CACTVS csbr
+	#  3D may be required to read in molecules to Insight
+	#>
+	
+	my $molecules = ens($_[0]);
+	my $outfile = $_[1];
+	my $options = $_[2] || '';
+	
+	my $count = 0;
+	my $fr;
+	my $mol;
+	my $dataname;
+	my $return;
+
+	$options = uc($options);
+
+########################################################################
+	my $warn; # Not properly implemented!
+	my %warn; # Not properly implemented!
+########################################################################
+
+	silico_msg('d', "Argument 0 is not an ensemble of molecules\n") if ref($_[0] ne 'ARRAY') || !defined $_[0];
+
+	$outfile = get_ofilebase($molecules).".sdf" if !$outfile;
+
+	add_option("BOND", $options) if get_flag('bond', 's');
+	add_option("NOBOND", $options) if get_flag('nobond', 's');
+	add_option("QUIET", $options) if (quiet()) || $options =~ /\bQUIET\b/;
+	remove_option("QUIET", $options) if $Silico::debug;
+	
+	$fr = open_molfile($fr, $outfile, undef, 'write', $options);
+	if (!defined $fr) {
+		silico_msg ('e', "Could not open $outfile for writing\n");
+		return undef;
+	}
+	
+	if ($options !~ /\bQUIET\b/) {
+		silico_msg('c' , "Writing sdf file: $outfile");
+		silico_msg('c', " using options $options") if $options;
+		silico_msg('c' , "\n");
+	}
+	
+	foreach $mol (@$molecules) {
+		++$count;
+		write_sdf_molecule($fr, $mol, $options);
+	}
+		
+	if ($warn) {
+		my @temp;
+		@temp = keys(%warn);
+		silico_msg('w', "Illegal character(s) '@temp' found in $warn SDF data key(s).  Some may have been replaced.\n");
+	}
+
+	close_molfile($fr);
+	
+	return 1;
+}
+
+sub write_sdf_molecule {
+	
+	my $fr = $_[0];
+	my $mol = $_[1];
+	my $options = $_[2];
+
+	my $dataname;
+	my $FH = $fr->{FH};
+	my $return;
+	my $warn;
+	my %warn;
+	
+	++$fr->{MOL_WRITE_COUNT};
+	#fr_printout($fr);
+		
+	if (defined $mol->{SOURCE_FILE_TYPE} && $mol->{SOURCE_FILE_TYPE} eq 'sdf_noparse') {
+		
+		# SDF data was read using 'fast' mode and the
+		# molecule data was not parsed
+		
+		if (!defined $mol->{MOL}) {
+			silico_msg('d', "Molecule data was not read properly!\n",
+					"Number: $fr->{MOL_WRITE_COUNT}, Name: '".($mol->{NAME}|| 'UNDEFINED')."'\n");
+		}
+		
+		if ($options && $options =~ '2D') {
+			$mol->{MDL_LINE} =~ s/3D/2D/;
+		} elsif ($options =~ '3D') {
+			$mol->{MDL_LINE} =~ s/2D/3D/;
+		}
+
+		print $FH $mol->{NAME}."\n";
+		print $FH $mol->{MDL_LINE}."\n";
+		print $FH $mol->{MOL};
+		
+	} else {
+		
+		# Normal silico molecule
+		if (!defined $mol->{NUMATOMS}) {
+			silico_msg('e', "\$mol->{NUMATOMS} is not defined!\n",
+				"Number: $fr->{MOL_WRITE_COUNT}, Name: \"$mol->{NAME}\"\n");
+			return undef;
+		}
+		
+		# Make sure that NUMBONDS is correct
+		$mol->{NUMBONDS} = molecule_count_numbonds($mol);
+			
+		# Generate bonds if there seem to be too few
+		molecule_check_and_fix_connectivity($mol, $options);
+		
+		# Convert aromatic bonds to alternating double/single.  MDL aromatic bonds are
+		# only allowed in substructure searches quoth the MDL Ctable document
+		convert_aromatic_bonds_kekule ($mol, );
+		
+		# Remove any aromatic bonds in guanidines, carboxylates, etc
+		remove_aromatic_bondorders($mol);
+			
+		$return = write_sdf_atoms_bonds($fr, $mol, $options);
+		return if !defined $return;		
+
+		# Set mol name if not set
+		$mol->{SDF_DATA}{NAME} ||= $mol->{NAME};
+	}
+		
+	# Saved SDF data
+	my $key;
+	foreach $key (sort keys (%{$mol->{SDF_DATA}})) {
+		
+		$dataname = $key;
+			
+		# Count illegal characters
+		if ($dataname =~ /([^a-zA-Z0-9.])/) {
+			++$warn;
+			++$warn{$1};
+		}
+			
+		# InstantJChem appears to choke on '#'s
+		# Replace with 'num_'
+		$dataname =~ s/\#/num_/g;
+	
+		print $FH ">  <$dataname>\n";
+		# Data line is terminated by a blank line
+		# Null values are encoded as an undefined value or ''
+	
+		my $r = ref ($mol->{SDF_DATA}{$key});
+		if ($r eq '' || $r eq 'SCALAR') {
+			my $q = $mol->{SDF_DATA}{$key};
+			print $FH  "$q\n" if defined $q && $q ne '';
+		} elsif ($r eq 'ARRAY') {
+			foreach (@{$mol->{SDF_DATA}{$key}}) {
+				chomp;
+				print $FH "$_\n";
+			}
+		} elsif ($r eq 'HASH') {
+			foreach ($mol->{SDF_DATA}{$key}) {
+				 print $FH "$key $_\n";
+			}
+		}	
+		print $FH "\n";
+	}
+	print $FH "\$\$\$\$\n";
+	return 1;
+}
+
+sub write_sdf_atoms_bonds {
+
+	#<
+	#? Write an MDL Mol record
+	#. Note: 2D option forces all Z coordinates to zero
+	#; Options: 3D (flag --sdf-3D), 2D (flag --sdf-2D), NO_SQUASH_HCOUNT (flag --sdf-squash-hcount)
+	#; Requires: file record, molecule, options
+	#; Returns: undef if error
+	#>
+
+	my $fr = $_[0];
+	my $mol = $_[1];
+	my $options = $_[2] || '';
+
+	my $atom;
+	my $batom1;
+	my $batom2;
+	my $bo;
+	my $bondlist;
+	my $breact;
+	my $bstereo;
+	my $btop;
+	my %bondlist;
+	my $comment;
+	my @chg_atoms;
+	my %fcharges;
+	my $FH = $fr->{FH};
+	my $mdl_line;
+	my ($min,$hour,$mday,$mon,$year);
+	my $squash_hcount;
+	my $twod;
+	my $xx;
+	my $z;
+	
+	# Table for translation of formal charges to charge specifier
+	#               fchg  code
+	%fcharges = qw(  3    1 
+			 2    2
+			 1    3
+			-1    5 
+			-2    6      
+			-3    7); 
+			
+			
+	if ($mol->{NUMATOMS}  > 999) {
+
+		silico_msg('e', "Number of atoms exceeds 999 in \"$mol->{NAME}\"!\n",
+				"Unable to write structure to sdf file.\n");
+		return undef;
+	}
+	
+	$xx = '3D';
+	if ($options =~ /\b3D\b/ || get_flag('sdf-3D', 'l')) {
+		
+		$xx = '3D';
+	} elsif ($options =~ /\b2D\b/ || $mol->{GEOM_2D} || get_flag('sdf-2D', 'l')) {
+		# Convert 2D molecules to 2D!
+		# Force Z coordinate to zero
+		$xx = '2D';
+		$twod = 1;
+	}
+	
+	$squash_hcount = 1;
+	if ($options =~ /\bNO_SQUASH_HCOUNT\b/ || get_flag('sdf-no-squash-hcount', 'l')) {
+		$squash_hcount = 0;
+	}
+	
+	(undef,$min,$hour,$mday,$mon,$year) = localtime(time);
+	# User initials, program, M,D,Y,H,Min, 2D/3D, scale1, scale2, energy, registry
+	
+	$mdl_line =  sprintf "  -SILICO-%02d%02d%02d%02d%02d$xx%2d%10.5f%12.5f%6d\n",
+				$mon, $mday, substr ($year, -1, 2), $hour, $min,0,0,($mol->{ENERGY}||0), $fr->{MOL_WRITE_COUNT};
+	
+	# Set name line in molecule.  Using SDF data if no name is defined
+	# or just 'Mol'
+	$mol->{NAME} = $mol->{NAME} || $mol->{SDF_DATA}{NAME} || 'Mol';
+	silico_msg('g', "Molecule: \"$mol->{NAME}\" Atoms: $mol->{NUMATOMS} Bonds: $mol->{NUMBONDS}\n");
+
+	# Header
+	print  $FH $mol->{NAME}."\n";		# Molecule name
+	print  $FH ($mdl_line);			# MDL information
+	$comment = $mol->{COMMENT} || '';
+	chomp $comment;
+	print  $FH "$comment\n"; 			# Comment line
+		
+	# Counts line
+	printf $FH "%3d",$mol->{NUMATOMS};	# number of atoms
+	printf $FH "%3d", $mol->{NUMBONDS};	# number of bonds
+	printf $FH "%3d", $mol->{NUM_ATOMLISTS} || 0;# number of atom lists
+	print  $FH "  0";	# unused
+	printf $FH "%3d", $mol->{CHIRAL_FLAG} || 0;	# chiral flag
+	printf $FH "%3d", 0;	# numuber of stext entries $mol->{NUM_STEXT}
+	printf $FH "%3d", 0;	# number of reaction components +1 $mol->{NUM_RECOMP}
+	printf $FH "%3d", 0;	# number of reactants $mol->{NUM_REACT}
+	printf $FH "%3d", 0;	# number of products $mol->{NUM_PROD}
+	printf $FH "%3d", 0;	# number of intermediates $mol->{NUM_INTER}
+	printf $FH "%3d",  1;# number of additional properties $mol->{NUM_ADPROP} (M lines?)
+	printf $FH "%6s", 'V2000';# ctab version
+	print  $FH "\n";
+		
+	# Atom block
+	for (my $i=0; $i < $mol->{NUMATOMS}; ++$i) {
+	
+		$atom = $mol->{ATOMS}[$i];
+
+		my $chgs;
+		my $c = $atom->{FORMAL_CHARGE};
+		
+		if ($c) {
+			$chgs = $fcharges{$c};
+			push @chg_atoms, $i;
+			#silico_msg ('w', "Error generating formal charge for atom $i\n") if !defined $chgs;
+			++$mol->{WARN}{FORMAL_CHARGES};
+		}
+
+		foreach ($atom->{HDESIG}, $atom->{AAMAP}, $atom->{INV}, $atom->{EXEX}) {
+			next if !defined $_;
+			s/ //g;
+		}
+		
+		# Hcount is squashed to zero unless set otherwise in options. 
+		my $hc;
+		if ($squash_hcount) {
+			$hc = 0;
+		} else {
+			$hc = $atom->{HCOUNT}|| 0;
+		}
+		
+		printf $FH "%10.4f", $atom->{X} || 0;		# x
+		printf $FH "%10.4f", $atom->{Y} || 0;		# y
+		if ($twod) {$z = 0; } else { $z = $atom->{Z} || 0; }	
+		printf $FH "%10.4f", $z;			# z
+		printf $FH " %-3s",$atom->{ELEMENT} || "Du";	# atom symbol
+		printf $FH "%2d", $atom->{MDIFF} || 0;		# mass difference
+		printf $FH "%3d", $chgs || 0;			# formal charge specifier (not actual value)
+		printf $FH "%3d", $atom->{SPARITY} || 0;	# atom stereo parity
+		printf $FH "%3d", $hc; 				# hydrogen count +1. 
+		printf $FH "%3d", $atom->{SCARE} || 0;		# stereo care box
+		printf $FH "%3d", $atom->{NUM_ATTACHED_ATOMS} || 0;	# valence
+		printf $FH "%3d", $atom->{HDESIG} || 0;		# H0 designator
+		printf $FH "%3d",  0;				# reaction component type (obsolete)
+		printf $FH "%3d",  0;				# reaction component number (obsolete)
+		printf $FH "%3d", $atom->{AAMAP} || 0;		# atom-atom mapping number
+		printf $FH "%3d", $atom->{INV} || 0;		# inversion/retention flag
+		printf $FH "%3d", $atom->{EXEX} || 0;		# exact exchange flag
+
+		print  $FH "\n";
+	}
+
+	# Bond block
+	undef %bondlist;
+	for (my $i=0; $i <$mol->{NUMATOMS}; ++$i) {
+		
+		$atom = $mol->{ATOMS}[$i];
+		$batom1 = $i+1;
+
+		for (my $j=0; $j<=$#{$atom->{CONNECT}}; ++$j) {
+
+			$batom2 = $atom->{CONNECT}[$j]+1;
+
+			# Skip if we have already printed out this bond
+			next if defined ($bondlist{"$batom2 $batom1"});
+				
+			$bo = $atom->{BORDERS}[$j];
+			$btop = $atom->{BTOP}[$j] || 0;
+			$bstereo = $atom->{BSTEREO}[$j] || 0;
+			$breact = $atom->{BREACT}[$j] || 0;
+				
+			# Skip if zero order or no bonds defined
+			next if !$bo;
+				
+			# Stop spaces causing an error in printf
+			$bo =~ s/ //g;
+			$btop =~ s/ //g;
+			$bstereo =~ s/ //g;
+			$breact =~ s/ //g;
+				
+			printf $FH "%3d%3d%3d%3d  0%3d%3d\n",
+				$batom1, $batom2, $bo, $bstereo, $btop, $breact;
+					
+			++$bondlist{"$batom1 $batom2"};
+		}
+	}
+
+	# Properties block
+	# Only atom charges are written
+
+	while (defined $chg_atoms[0]) {
+
+		my $val = $#chg_atoms+1;
+		$val = 8 if $val > 8;
+		printf $FH "M  CHG%3d ", $val;
+		foreach (1..8) {
+			my $n = shift @chg_atoms;
+			last if !defined $n;
+			printf $FH "%3d %3d ", $n+1, $mol->{ATOMS}[$n]{FORMAL_CHARGE};
+		}
+		print $FH "\n";
+	}
+
+	print $FH "M  END\n";
+
+	return 1;
+}
+
+
+sub mol_sdf_stereo {
+
+	#<
+	#? Crudely use SDF stereo descriptors to convert 2D to 3D files
+	#. WARNING: This method works for simple molecules but will fail for
+	#  complex, fused systems.  The minimised result from this should be
+	#  checked with sdf_check_chiral_parity
+	#. Assumes molecule has been squashed into the XY plane
+	#  Adds a hydrogen atom to carbons if there valences are not filled
+	#; Requires: molecule
+	#; Returns: nothing
+	#>
+	
+	my $mol = $_[0];
+	
+	my $atom;
+	my $atoms = $mol->{ATOMS};
+	my @con;
+	my $hatom;
+	my $newatom;
+	my @newcon;
+	my $x;
+	my $y;
+	my $z;
+	my ($a1, $a2, $a3, $a4);
+	
+	#$ens->[0] = $mol;
+	#write_mol2($ens,"p.mol2");
+	
+	foreach $atom (atoms($mol)) {
+		
+		next if (!defined $atom->{SPARITY} || ($atom->{SPARITY} != 1 && $atom->{SPARITY} != 2));
+		
+		@con = sort (@{$atom->{CONNECT}});
+					
+		# move hydrogen atoms to last
+		undef $hatom;
+		undef @newcon;
+		foreach (@con) {
+			if ($atoms->[$_]{ELEMENT} eq 'H') {
+				$hatom = $_;
+				next;
+			}
+			push @newcon, $_;
+		}
+			
+		push @newcon, $hatom if defined $hatom;
+		@con = @newcon;
+				
+		$a1 = $atoms->[$con[0]];
+		$a2 = $atoms->[$con[1]];
+		$a3 = $atoms->[$con[2]];
+		$a4 = $atoms->[$con[3]] if defined $con[3];
+		
+		next if (! defined $a1 || ! defined $a2);
+		
+		($x, $y, $z) = calc_chiral_sdf_stereo($atom, $a1, $a2);
+		
+		if ($atom->{SPARITY} == 2) {
+			$x = -$x;
+			$y = -$y;
+			$z = -$z;
+		}
+				
+		$a3->{Z} = ($a3->{Z}+$atom->{Z})/2 - $z;
+		
+		if (defined $con[3]) {
+			
+			$a4->{Z} = ($atom->{Z}+$a4->{Z})/2 + $z;
+			
+		} else {
+		
+			if ($atom->{ELEMENT} eq 'C')  {
+			
+				silico_msg('n', "Adding hydrogen to atom \"$atom->{NAME}\"\n");
+				$newatom = mol_add_atom($mol, "H", "H", $atom->{X}, $atom->{Y}, $atom->{Z}+$z, $a3->{SUBNAME}, $a3->{SUBID});
+				$newatom->{CHAIN} = $atom->{CHAIN};
+				$newatom->{SEGID} = $atom->{SEGID};
+				bond_create_atom($mol, $newatom, $atom, 1);
+			}
+		}
+	}
+}
+
+
+sub calc_chiral_sdf_stereo {
+
+	#<
+	#? Calculate the normaliased cross between vectors defined by $atom0 ->atom1
+	#  and atom0 -> atom2;
+	#  Warning this contains a horrible fudge if two atoms overlap
+	#  or all three atoms are in a straight line
+	#; Requires: atom0, atom1, atom2
+	#; Returns: vector x, y, z
+	#
+	#	A1 ---- A0
+	#               |
+	#               |
+	#               A2
+	#>
+
+	my $a0 = $_[0];
+	my $a1 = $_[1];
+	my $a2 = $_[2];
+	
+	my $l;
+	
+	my $x1 = $a1->{X} - $a0->{X};
+	my $y1 = $a1->{Y} - $a0->{Y};
+	my $z1 = $a1->{Z} - $a0->{Z};
+	my $x2 = $a2->{X} - $a0->{X};
+	my $y2 = $a2->{Y} - $a0->{Y};
+	my $z2 = $a2->{Z} - $a0->{Z};
+	
+	my ($xc, $yc, $zc);
+
+	# Calc cross product
+	
+	$xc = ($y1*$z2 - $z1*$y2);
+	$yc = ($x2*$z1 - $x1*$z2);
+	$zc = ($x1*$y2 - $y1*$x2);
+
+	$l = sqrt($xc**2 + $yc**2 + $zc**2);
+	
+	# Fudge it if atoms are in a straight line or overlapped
+	# by moving three of the atoms just a little bit
+	if ($l == 0) {
+	
+		$a0->{X} += 0.1;
+		$a1->{Y} -= 0.1;
+		$a2->{X} -= 0.1;
+		
+		my ($tempx, $tempy, $tempz);
+		
+		($tempx, $tempy, $tempz) = atom_cross_prod($a0, $a1, $a2);
+		
+		# Return things to the way they were
+		$a0->{X} -= 0.1;
+		$a1->{Y} += 0.1;
+		$a2->{Z} += 0.1;
+		
+		return ($tempx, $tempy, $tempz);
+	}
+	
+	$xc = $xc/$l;
+	$yc = $yc/$l;
+	$zc = $zc/$l;
+		
+	return ($xc, $yc, $zc);
+}
+		
+			
+sub calc_chiral_volume {
+
+	#<
+	#? Calculated the chiral volume for four atoms
+	#. Uses the equations (A . B x C) where A is the vector atom1->atom2
+	#  B is atom1->atom3 and C is atom1 -> atom4
+	#; Requires: atom1, atom2, atom3, atom4
+	#; Returns: signed volume of parallelipiped defined by the vectors
+	#>
+	
+	my $a0 = $_[0];
+	my $a1 = $_[1];
+	my $a2 = $_[2];
+	my $a3 = $_[3];
+	
+	my $x1 = $a1->{X} - $a0->{X};
+	my $y1 = $a1->{Y} - $a0->{Y};
+	my $z1 = $a1->{Z} - $a0->{Z};
+	my $x2 = $a2->{X} - $a0->{X};
+	my $y2 = $a2->{Y} - $a0->{Y};
+	my $z2 = $a2->{Z} - $a0->{Z};
+	my $x3 = $a3->{X} - $a0->{X};
+	my $y3 = $a3->{Y} - $a0->{Y};
+	my $z3 = $a3->{Z} - $a0->{Z};
+	
+	return $x1 * ($y2*$z3 - $z2*$y3) +  $y1 * ($x3*$z2 - $x2*$z3) + $z1 * ($x2*$y3 - $y2*$x3);
+	
+	
+}
+
+sub sdf_check_chiral_parity {
+
+	my $mol = $_[0];
+	my $subflag = $_[1] || 0;
+	
+	#<
+	#? Check that the chirality (parity) flags in an sdf file match
+	#  the actual stereochemistry in the file.
+	#; Requires: molecule, optional flag to mark failed atoms as Du
+	#; Returns: negative of the number of errors in parity
+	#>
+	
+	my ($a1, $a2, $a3, $a4);
+	my @con;
+	my @newcon;
+	my $vol;
+	my $atom;
+	my $hatom;
+	my $error = 0;
+	my $parity;
+	
+	silico_msg('c', "Stereochemistry (parity) check...");
+	
+	foreach $atom (atoms($mol)) {
+	
+		my $string;
+		
+		$parity = $atom->{SPARITY};
+		
+		next if (!defined $parity || ($parity != 1 && $parity != 2));
+		
+		@con = sort (@{$atom->{CONNECT}});
+			
+		# move hydrogen atoms to last
+		undef $hatom;
+		undef @newcon;
+		foreach (@con) {
+			if ($mol->{ATOMS}[$_]{ELEMENT} eq 'H') {
+				$hatom = $_;
+				next;
+			}
+			push @newcon, $_;
+		}
+			
+		push @newcon, $hatom if defined $hatom;
+		@con = @newcon;
+		
+		if ($#con != 3) {
+			silico_msg('n', "Atom $atom->{NUM} has only ".($#con+1)." atoms attached\n");
+			next;
+		}
+				
+		$a1 = $mol->{ATOMS}[$con[0]];
+		$a2 = $mol->{ATOMS}[$con[1]];
+		$a3 = $mol->{ATOMS}[$con[2]];
+		$a4 = $mol->{ATOMS}[$con[3]];
+		
+		$vol = calc_chiral_volume($a1, $a2, $a3, $a4);
+		$string = sprintf " Atom: $atom->{NUM}. Parity: $parity, chiral volume: %6.2f\n", $vol;
+		silico_msg('c', "$string");
+		
+		if ($parity == 1 && $vol < 0 || $parity == 2 && $vol > 0) {
+			$error -= 1;
+			silico_msg('w', "Stereochemistry of atom $atom->{NUM} is wrong.\n",
+					"Converting to dummy atom.\n");
+			if ($subflag) {
+				$atom->{ELEMENT} = 'Du';
+				$atom->{ELEMENT_NUM} = 0;
+			}
+		}
+	}
+	
+	if ($error < 0) {
+		silico_msg('c', "errors found\n");
+	} else {
+		silico_msg('c', "OK\n");
+	}
+	
+	return $error;
+}
+
+sub sdf_calc_atom_parity_error {
+
+	my $atom = $_[0];
+	my $mol = $_[1];
+	
+	#<
+	#? Check that the chirality (parity) flags in an sdf file match
+	#  the actual stereochemistry in the file.
+	#; Requires: molecule, optional flag to mark failed atoms as Du
+	#; Returns: negative of the number of errors in parity
+	#>
+	
+	my ($a1, $a2, $a3, $a4);
+	my @con;
+	my @newcon;
+	my $vol;
+	my $hatom;
+	my $error = 0;
+	my $parity;
+	
+	$parity = $atom->{SPARITY};
+		
+	return 0  if (!defined $parity || ($parity != 1 && $parity != 2));
+		
+	@con = sort (@{$atom->{CONNECT}});
+			
+	# move hydrogen atoms to last
+	undef $hatom;
+	undef @newcon;
+	foreach (@con) {
+		if ($mol->{ATOMS}[$_]{ELEMENT} eq 'H') {
+			$hatom = $_;
+			next;
+		}
+		push @newcon, $_;
+	}
+			
+	push @newcon, $hatom if defined $hatom;
+	@con = @newcon;
+	
+	if ($#con != 3) {
+		silico_msg('c', "Atom $atom->{NUM} has only ".($#con+1)." atoms attached");
+		next;
+	}
+			
+	$a1 = $mol->{ATOMS}[$con[0]];
+	$a2 = $mol->{ATOMS}[$con[1]];
+	$a3 = $mol->{ATOMS}[$con[2]];
+	$a4 = $mol->{ATOMS}[$con[3]];
+		
+	$vol = calc_chiral_volume($a1, $a2, $a3, $a4);
+				
+	if ($parity == 2 && $vol > 0) {
+		$error = abs($vol) ;
+		
+	}
+	
+	if ($parity == 1 && $vol < 0) {
+		$error = abs($vol);
+		
+	}
+		
+	return $error;
+}
+
+sub sdf_error_mol {
+
+	#<
+	#? Produce an empty molecule as a result of a read error
+	#>
+
+	my $mol = $_[0];
+
+	$mol->{NUMATOMS} = 0;
+	$mol->{NUMBONDS}=0;
+	$mol->{ATOMS} = [];
+
+	return $mol;
+}
+
+sub sdf_data_to_atom {
+
+        #<
+        #? Copy data from SDF_DATA to atom records
+	#.  Assumes SDF data is in an array
+	#.  Somewhat dangerous	
+        #>
+
+        my $mol = shift;
+	my @fields = @_;
+
+        my $atomnum;
+	my @f;
+	my $field;
+        my $val;
+
+        foreach $field (@fields) {
+
+                next if !defined $mol->{SDF_DATA}{$field};
+		
+		#print "field $field\n";
+		
+		foreach (@{$mol->{SDF_DATA}{$field}}) {
+			($atomnum, $val) = split;
+			$mol->{ATOMS}[$atomnum-1]{$field}=$val;
+		}
+       } 
+}
+
+sub atom_data_to_sdf {
+
+        #<
+        #? Copy data to SDF_DATA from atom records
+        #>
+
+        my $mol = shift;
+	my @fields = @_;
+
+	my $atom;
+        my $field;
+	my $i;
+
+	# Delete all existing values
+	foreach $field (@fields) {
+		delete $mol->{SDF_DATA}{$field};
+	}
+
+	$i = 1;
+	foreach $atom (atoms($mol)) {
+
+		foreach $field (@fields) {
+
+			if (defined $atom->{$field}) {
+
+				$mol->{SDF_DATA}{$field} .= "$i $atom->{$field}\n";
+			}
+		}
+		++$i;
+	}
+}
+
+
+return 1;
+
+
+return 1;

@@ -1,0 +1,240 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! chop_cell
+#? Chop down simulation cell by deleting atoms outside a newly defined cell
+#. Cell centred on protein atoms and then any molecule with atoms projecting beyond the new cell dimensions is deleted
+#
+#F
+#; -x X dimension of cell used for chopping
+#; -y Y dimension of cell used for chopping
+#; -z Z dimension of cell used for chopping
+#; -xr Reduction of x dimension for cell output
+#; -yr Reduction of x dimension for cell output
+#; -zr Reduction of x dimension for cell output
+
+#; -hex Create hexagonal cell for gromacs .gro output (not for pdb format)
+#; -ip Ignore protein molecules (those with an identifiable amino acid CA atom)
+#SF
+#. $Revision: 1.1.2.1 $
+#. Created: DKC November 1999 and later.
+#>
+
+use strict;
+
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("chop_cell", '$Revision: 1.1.2.1 $');
+
+my $x = make_flag('x', 'x', 'X dimension of cell used for chopping', 1, 80);
+my $y = make_flag('y', 'y', 'Y dimension of cell used for chopping', 1, 100);
+my $z = make_flag('z', 'z', 'Z dimension of cell used for chopping', 1, 140);
+
+my $xr = make_flag('xr', 'xr', 'X dimension reduction of output cell', 1, 12);
+my $yr = make_flag('yr', 'yr', 'Y dimension reduction of output cell', 1, 17);
+my $zr = make_flag('zr', 'zr', 'Z dimension reduction of output cell', 1, 5);
+
+my $xc = make_flag('xc', 'xc', 'X coord for protein centre', 1, 0);
+my $yc = make_flag('yc', 'yc', 'Y coord for protein centre', 1, 0);
+my $zc = make_flag('zc', 'zc', 'Z coord for protein centre', 1, 0); 
+
+my $hexagonal = make_flag('hex', 'hexagonal-cell', 'Create hexagonal cell for gromacs .gro output (not for pdb format)');
+my $ignoreprot = make_flag('ip', 'ignore-protein', 'Ignore protein molecules');
+
+my $r2;
+$r2->{X} = $x/2;
+$r2->{Y} = $y/2;
+$r2->{Z} = $z/2;
+
+my $xn = $x-$xr; # New X
+my $yn = $y-$yr; # New Y
+my $zn = $z-$zr; # New Z
+
+my $asl_prot = "RESNAME:ALA,ARG,ASN,ASP,CYS,GLU,GLN,GLY,HIS,ILE,LEU,LYS,MET,PHE,PRO,SER,THR,TRP,TYR,VAL";
+
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('chopped');
+
+foreach my $arg (@arguments) {
+
+	my $fr_in;
+	my $fr_out;
+
+	while (my $mol = read_mol_single($fr_in, $arg)) {
+	
+		molecule_check_and_fix_connectivity($mol);
+
+		my $i = 0;
+		foreach my $atom (atoms($mol)) {
+
+                        $atom->{I} = $i;
+			++$i;
+                }
+
+		my $protatoms = get_atoms_using_specifier($mol, $asl_prot);
+		
+		print "\n";
+		print "Original molecule cell: @{$mol->{CELL}}\n";
+		print "New molecule cell:      $xn $yn $zn\n";
+		
+		my @centroid = centroid($mol, $protatoms);
+		foreach (@centroid) {
+			$_ = sprintf "%0.3f", $_;
+		}
+		
+		print "\nProtein centroid: @centroid. Translating to ($xc, $yc, $zc)\n";
+		
+		molecule_translate($mol, -$centroid[0]+$xc, -$centroid[1]+$yc, -$centroid[2]+$zc);
+
+		label_aa_backbone($mol);
+		
+		print "Finding molecules\n";
+		my $mols = molecule_split($mol, 1, 1);
+
+		
+		my $n = $#{$mols}+1;
+		
+		print "Found $n molecules\n";
+	
+		$i = 0;
+		my $newmol = molecule_copy_noatoms($mol);
+		
+		@{$newmol->{CELL}} = ($xn, $yn, $zn);
+		
+		@{$newmol->{GROMACS_BOX_VECTORS}} = (($xn)/10, ($yn)/10, ($zn)/10, 0, 0, $hexagonal*($xn)/20, 0, 0, 0);
+		
+		print "New cell dimensions ($xn, $yn, $zn) Ang\n\n";
+		
+		MOL: foreach my $m (@$mols) {
+		
+			++$i;
+			print "Molecule $i\n" if $i % 1000 == 0;
+			
+			my $p;
+			foreach my $atom (atoms($m)) {
+				
+				if ($ignoreprot && $atom->{FG}{AA_CA}) {
+					print "Found protein molecule. Retaining\n";
+					$p = 1;
+					last;
+				}
+			}
+
+			if (!$p) {
+				my $flag = 0;
+				foreach my $atom (atoms($m)) {
+					foreach my $r ('X', 'Y', 'Z') {
+					
+						$flag = 1 if $atom->{$r} > $r2->{$r};
+						$flag = 1 if $atom->{$r} < -$r2->{$r}
+					}
+					
+					next MOL if $flag;
+				}
+			}
+			
+			foreach my $atom (atoms($m)) {
+			
+				push @{$newmol->{ATOMS}}, $atom;
+				++$newmol->{NUMATOMS};
+			}
+		}
+		
+		my $residues = molecule_get_residues($newmol);
+		my $reshash;
+		foreach my $res (@$residues) {
+			++$reshash->{$res->[0]{SUBNAME}};
+		}
+		
+		print heading("Retained residue counts");
+		my $filename = get_ofilename($mol, undef, 'txt');
+		open (OUT, ">$filename") || silico_msg('d', "Could not open file $filename\n");
+		foreach my $key (sort(keys %$reshash)) {
+		
+			print "$key $reshash->{$key}\n";
+			print OUT "$key $reshash->{$key}\n";
+		}
+		print "\n";
+		close OUT;
+
+		# Resort atoms to original order
+		@{$newmol->{ATOMS}} = sort {$a->{I} <=> $b->{I}} @{$newmol->{ATOMS}};
+
+		# Delete bonds
+		foreach my $atom (atoms($newmol)) {
+		
+			delete $atom->{BORDERS};
+			delete $atom->{CONNECT};	
+			#print "$atom->{I}\n";
+		}
+
+		molecule_translate($mol, $centroid[0], $centroid[1], $centroid[2]);
+		
+		print "Writing output\n";
+		write_mol_single($fr_out, $newmol, undef, 'gro');
+	}
+
+	close_molfile($fr_out);
+
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+	#<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+	#; Sets: $Silico::home_dir, $Silico::lib_dir
+	#; Requires: nothing
+	#; Returns: nothing
+	#>
+
+	die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+	$Silico::home_dir = $ENV{SILICO_HOME} . "/";
+	$Silico::lib_dir  = $Silico::home_dir . "lib/";
+	push @INC, substr($Silico::lib_dir, 0, -1);
+
+	require silico;
+}

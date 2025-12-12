@@ -1,0 +1,262 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_characterise
+#? Calculate molecular weight, molecule extents and other molecular properties
+#. Properties
+#, Number of atoms
+#, Number of bonds
+#, Number of rotatable bonds (see subroutine mol_count_rot_bonds)
+#, Molecular weight
+#, Number of C, H, N, O, P, S, halogen and other atoms.
+#, Number of rings up to size 10 (Note that the number of rings is not quite the way a chemist would see it - eg Naphthalene has 3 rings)
+#, Number of planar rings
+#, Number of H-bond donors (see subroutine mol_find_donors_acceptors)
+#, Number of H-bond acceptors
+#, Molecule name
+#. Adds hydrogens first by default
+#. Data is written to a file '<filebase>_mc.out' in tab delimited format
+#  and into SDF data fields if -sdf flag is set
+#. Flags
+#; -sdf  Write out an sdf file containing molecule structure and calculated data (on by default)
+#; -hadd Add hydrogens (on by default)
+#; -t Write data to tab delimited text file
+#; -replace Overwrite original sdf file (only if -sdf is set)
+#; -force Overwrite preexisting output files
+#. $Revision: 1.20.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title ("mol_characterise", '$Revision: 1.20.2.1.2.2 $');
+
+require silico_hydrogens;
+
+my $sdf = make_flag('sdf', undef, 'Write out SDF file containing data', undef, 1);
+my $hadd = make_flag('hadd', undef, 'Add hydrogens', undef, 1);
+my $text = make_flag('t', undef, 'Write data to tab delimited text file', undef, 0);
+my $replace = make_flag('r', undef, 'Overwrite orginal sdf file with new one');
+my $force = make_flag('force', undef, 'Force overwriting of output files', undef, 0);
+
+my @arguments = get_arguments2(">=1");
+
+my $id = randomchar();
+
+my $count = 0;
+foreach my $arg (@arguments) {
+	my $filebase;
+	my $molecules;
+	
+	$filebase = get_filebase($arg);
+	
+	if (!$force && -e $filebase."_mc.sdf") {
+		silico_msg('e', "Output file ".$filebase."_mc.sdf already exists.\n",
+				"Use -force to overwrite.\n",
+				"This file has been skipped.\n");
+		next;
+	}
+	
+	$molecules = read_mol_any ($arg);
+	if (!defined $molecules->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	# Header
+	if ($text) {
+		open (OUTFILE, ">$filebase"."_mc.out") || die "Could not open file $filebase"."_mc.out\n";
+
+		print OUTFILE "#Num\tNAtom\tNBond\tNRot\tMolWt\tN_C\tN_H\tN_N\tN_O\tN_P\tN_S\tN_Hal\tN_Other\tN_Heavy\tNRing\tNPRings\tNDonor\tNAccept\tName\n";
+	}
+	
+	foreach my $mol (@$molecules) {
+		my ($charge, $formula, $m, $mw, $na, $nd, $numC, $numH, $numHal, $numHeavy, $numN, $numO, $numOther, $numP, $numprings, $numrings, $numRot, $numS, $prings, $rings);
+		
+		if ($hadd) {
+			my $hcount;
+			(undef, undef, $hcount) = mol_add_hydrogens($mol);
+			silico_msg('c', "Added $hcount hydrogens to molecule ".ftfp($mol->{NAME})."\n");
+		}
+		
+		$mw = sprintf "%.2f", molecule_mw($mol);
+		$formula = molecule_formula($mol);
+				
+		$numC = $formula->{C} || 0;
+		$numH = $formula->{H} || 0;
+		$numN = $formula->{N} || 0;
+		$numO = $formula->{O} || 0;
+		$numP = $formula->{P} || 0;
+		$numS = $formula->{S} || 0;
+		
+		$numHal = ($formula->{F} || 0) + ($formula->{Cl} || 0) + ($formula->{Br} || 0) + ($formula->{I} || 0);
+		
+		# Non CHNOSP or Halogen atoms
+		$numOther = 0;
+		foreach (keys %$formula) {
+			next if 'C';
+			next if 'H';
+			next if 'N';
+			next if 'O';
+			next if 'S';
+			next if 'P';
+			next if 'F';
+			next if 'Cl';
+			next if 'Br';
+			next if 'I';
+			
+			++$numOther;
+		}
+		
+		$numHeavy = $mol->{NUMATOMS} - $numH;
+			
+		# Find up to 10 membered rings
+		($rings, $prings, undef) = molecule_find_rings($mol, 10);
+
+		# Identify non-rotatable amide bonds
+		# and calcuate charge groups
+		mol_label_functional_group($mol);
+		
+		# Sum total charge on molecule (can be undefined)
+		$charge = mol_calc_charge($mol);
+
+		$numRot = mol_count_rot_bonds($mol);
+		
+		($nd, $na) = mol_find_donors_acceptors($mol);
+
+		$numrings = $#{$rings}+1;
+		$numprings = $#{$prings}+1;
+		
+		print OUTFILE "$count\t$mol->{NUMATOMS}\t$mol->{NUMBONDS}\t$numRot\t$mw\t$numC\t$numH\t$numN\t$numO\t$numP\t$numS\t$numHal\t$numOther\t$numHeavy\t$numrings\t$numprings\t$nd\t$na\t$mol->{NAME}\n" if $text;
+		
+		if ($sdf) {
+		
+			$mol->{SDF_DATA} ||= {}; # Make sure the mol->SDF_DATA is defined
+		
+			$m = $mol->{SDF_DATA};
+			
+			$m->{'SILICO.NUMATOMS'} = $mol->{NUMATOMS};
+			$m->{'SILICO.NUMBONDS'} = $mol->{NUMBONDS};
+			$m->{'SILICO.NUMROT'} = $numRot;
+			$m->{'SILICO.MW'} = $mw;
+			$m->{'SILICO.NUMC'} = $numC;
+			$m->{'SILICO.NUMH'} = $numH;
+			$m->{'SILICO.NUMN'} = $numN;
+			$m->{'SILICO.NUMO'} = $numO;
+			$m->{'SILICO.NUMP'} = $numP;
+			$m->{'SILICO.NUMS'} = $numS;
+			$m->{'SILICO.NUMHAL'} = $numHal;
+			$m->{'SILICO.NUMHEAVY'} = $numHeavy;
+			$m->{'SILICO.NUMOTHER'}= $numOther;
+			$m->{'SILICO.NUMRINGS'} = $numrings;
+			$m->{'SILICO.NUMPRINGS'} = $numprings;
+			$m->{'SILICO.NUMDON'} = $nd;
+			$m->{'SILICO.NUMACC'} = $na;
+			$m->{'SILICO.NUMCHG'} = $#{$mol->{CHARGE_GROUPS}}+1;
+			$m->{'SILICO.CHARGE'} = $charge if defined $charge;
+			
+			$m->{'SILICO.DOCK.SCORE'} = $mol->{DOCK_ENERGY} if $mol->{DOCK_ENERGY};
+			$m->{'SILICO.PMF.SCORE'} = $mol->{PMF_ENERGY} if $mol->{PMF_ENERGY};
+			$m->{'SILICO.FILENAME'} = $arg;
+			$m->{'SILICO.ID'} = sprintf "$id%08d", $count+1;
+		}
+		
+		++$count;
+	}
+	
+	if ($sdf) {
+		
+		write_sdf($molecules, $filebase."_mc.sdf");
+
+		if ($replace) {
+			my $run = "mv $filebase"."_mc.sdf $filebase.sdf";
+			system("$run") == 0 or silico_msg('d', "System command \"$run\" failed!\n");
+		}
+	}
+
+	close OUTFILE if $text;
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub randomchar {
+
+	#<
+	#? Generate a random two-letter string.
+	#; Requires: nothing
+	#; Returns: string
+	#>
+	
+	my $x = '';
+	my $letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+	my $random;
+	
+	$random = int rand(23);
+	$x .= substr($letters, $random, 1);
+	$random = int rand(23);
+	$x .= substr($letters, $random, 1);
+	
+	silico_msg('c', "\n",
+			"Adding SILICO.ID field with prefix '$x'\n",
+			"\n");
+	
+	return $x;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

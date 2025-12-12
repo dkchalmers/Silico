@@ -1,0 +1,138 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_tab
+#? Read and write character delimited files (default space delimited)
+#F
+#; -d Delimiter (tab [\t], space [\s+], comma [,])
+#; -smooth Smooth data
+#; -w Smoothing window
+#; -noheader First line is NOT header line
+#. Created: DKC November 2003
+#. $Revision: 1.1.2.2.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $data;
+my $mols;
+my $options = '';
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("write_tab", '$Revision: 1.1.2.2.2.2 $');
+
+require silico_tabledata;
+
+my $delimiter =   make_flag('d', 'delimiter', "Delimiter [tab, space, comma]", 1, 'space');
+my $smooth =      make_flag('smooth', 'smooth', "Smooth data over window of n points", 1);
+my $noheader =    make_flag('noheader', 'no-table-header', "First line is NOT header line");
+
+my @arguments = get_arguments2('>=1', 'none');
+
+my @fields = ();
+
+foreach my $arg (@arguments) {
+	
+	my $filebase = get_filebase($arg);
+	my $fileext = get_fileext($arg);
+
+	if ($fileext eq 'sdf' || $fileext eq 'mol2' || $fileext eq 'pdb') {
+
+		$mols = read_mol_any ($arg);
+		$data = sdf_data_to_table_delimited($mols);
+
+	} else {
+	
+		if ($fileext eq 'xvg') {
+		
+			$options .= " IGNORE_HASH_LINES IGNORE_AT_LINES";
+			$noheader = 1;
+		}
+
+		$data = read_table_delimited($arg, $delimiter, !$noheader, $options);
+	}
+	
+	if (!defined $data) {
+		silico_msg('e', "Could not read data from file $arg!\n",
+				"Skipping.\n");
+		next;
+	}
+
+	if ($noheader) {
+		print "No headers\n";
+	} else {
+		print "Found headers: @{$data->{HEADERS}}\n" if !get_flag('quiet', 'l') ;
+	}
+	print "Read $data->{NUMLINES} lines\n" if !get_flag('quiet', 'l');
+	
+	my $oext = 'new';
+	$oext = 'smooth' if $smooth;
+
+	smooth_table_delimited($data, $smooth) if $smooth;
+
+	write_table_delimited($data, "$filebase\_$oext.txt", "\t", undef, @fields);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

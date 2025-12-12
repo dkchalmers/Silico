@@ -1,0 +1,130 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_smiles
+#? Generate a SMILES string for a molecule
+#F
+#; -p Generate smiles of parent molecule (ie remove salts, etc)
+#; -b Include explicit bond orders
+#; -h Include explicit hydrogen atoms
+#; -k Use Kekule bonds and non-aromatic atom symbols
+#; -c Use ChemAxon molconvert to generate canonical Smiles rather than Silico
+#SF
+#. $Revision: 1.9.2.3.2.1 $
+#>
+
+use strict;
+package Silico;
+
+
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_smiles", '$Revision: 1.9.2.3.2.1 $');
+
+require silico_smiles;
+require silico_split;
+
+my $p = make_flag('p', 'parent', 'Generate smiles of parent molecule (ie remove salts, etc)');
+my $b = make_flag('b', 'explicit-bondorders', 'Include explicit bond orders');
+my $h = make_flag('h', 'explicit-hydrogens', 'Include explicit hydrogen atoms');
+my $k = make_flag('k', 'kekule-bonds', 'Use Kekule bonds and non-aromatic atom symbols');
+my $c = make_flag('c', 'chemaxon', 'Use ChemAxon molconvert to generate canonical Smiles');
+
+@arguments = get_arguments2('>=1');
+
+foreach $arg (@arguments) {
+	
+	my $mol;
+	my $mols;
+	my $ens;
+	
+	# Read in molecule data from the file $arg
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any ($arg);
+	mol_read_error($arg) if (!defined $mols->[0]);
+	
+	MOL: foreach $mol (@$mols) {
+		
+		molecule_check_and_fix_connectivity($mol);
+		
+		$mol = molecule_split_keeping_largest_mol($mol) if $p;
+
+		push @$ens, $mol;
+	}
+	
+	ens_smiles_string($ens, $c);
+	
+	foreach $mol (@$ens) {
+		print "$mol->{SDF_DATA}{SMILES}\n";
+	}
+
+	write_mol_any($ens);
+}
+
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

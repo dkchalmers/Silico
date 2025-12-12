@@ -1,0 +1,236 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_wrap_cell
+#? Wrap all molecules back in to a unit cell.
+#. By default the unit cell starts at 0, 0, 0 and the largest fragment is 
+#  moved to the centre of this cell
+#. The system around a given atom using the -a flag
+#. Useful for molecular dynamics output where some molecules have wandered
+#  out of the unit cell
+#F
+#; -ignore     Ignore unit cell dimensions in individual files
+#; -x_<number> Default unit cell's X dimension
+#; -y_<number> Default unit cell's Y dimension
+#; -z_<number> Default unit cell's Z dimension
+#; -i_<file>   Index file
+#; -a_<number> Atom number to centre the system around
+#; -g_<string> Name of index group to centre the system around
+#; -t          Translate the centre of largest molecule to (0,0,0)
+#; -l          Translate bottom, left,  (0,0,0)
+#SF  
+#. Created: DKC 2001
+#. $Revision: 1.31.2.1.2.4 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $starttime = (times)[0];
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_wrap_cell", '$Revision: 1.31.2.1.2.4 $');
+
+require silico_gromacs;
+require silico_split;
+
+setup_flags();
+
+my $ignore     = make_flag('ignore', undef, "Ignore unit cell data in individual files");
+my $boxx       = make_flag('x', undef,"Box size X",	1);
+my $boxy       = make_flag('y', undef,"Box size Y",	1);
+my $boxz       = make_flag('z', undef,"Box size Z",	1);
+my $indexfile  = make_flag('i','index-file', "Index file", 1);
+my $a          = make_flag('a', undef, "Atom number to centre the system on", 1, undef);
+my $group      = make_flag('g', undef, "Group to centre the system on", 1);
+my $translate  = make_flag('t', undef, "Translate the system so the centre lies at (0, 0, 0)");
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('wrap');
+
+if (defined $indexfile && !defined $group) {
+	silico_msg('w', "Use of an index file is meaningless if not centring on a group.\n",
+			"Therefore, the index file will be ignored.\n");
+}
+
+my $index;
+if (defined $group) {
+	
+	# Check that $group and $a are not both in use.
+	if (defined $a) {
+		silico_msg('d', "Can not centre on an atom and a group at the same time!\n",
+				"You may use the -a flag or the -g flag, but not both at once.\n",
+				"Please choose one or the other.\n");
+	}
+	
+	# Check that $indexfile is defined if $group is defined
+	if (!defined $indexfile) {
+		silico_msg('d', "To centre the system on an index group, an index file must be provided.\n",
+				"Please supply such a file with the -i flag.\n");
+	}
+	
+	# Read in the index
+	$index = read_gromacs_indexfile($indexfile) if defined $indexfile;
+	if (defined $indexfile && !defined $index) {
+		silico_msg('d', "Could not create an index from file $indexfile!\n");
+	}
+	
+	# Check that the group is actually present in the index
+	my $flag = 0;
+	foreach my $igroup (keys %$index) {
+		$flag = 1 if $igroup eq $group;
+	}
+	if (!$flag) {
+		silico_msg('d', "Group \"$group\" not found in index file $indexfile!\n");
+	}
+}
+
+foreach my $arg (@arguments) {
+	
+	my $filebase = get_filebase($arg);
+	my $ext = get_fileext($arg);
+	
+	silico_msg('c', "File: $arg\n");
+	
+	my $mols = read_mol_any ($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+ 	my ($obase, $oformat) = get_ofilename2($mols);
+	my $ens;
+	foreach my $mol (@$mols) {
+		
+		# Correct bonding if required
+		molecule_check_and_fix_connectivity($mol);
+		
+		# Determine the size of the box
+		print "\nInitial:\n";
+		my $cell;
+		@$cell = calc_box_size($mol, $boxx, $boxy, $boxz);
+		
+		# Split the molecule by connectivity
+		my $newmols = molecule_split($mol);
+		
+		# Find the largest molecule/fragment
+		my $largest;
+		foreach my $newmol (@$newmols) {
+			$largest = $newmol if (!defined $largest->{ATOMS}[0]);
+			$largest = $newmol if ($#{$largest->{ATOMS}} < $#{$newmol->{ATOMS}});
+		}
+	
+		# Find the centre of the largest fragment if -a has not been set
+		# Get the coordinates of the atom to use to centre
+		# if this is set using -a
+		my $list;
+		my ($xc, $yc, $zc);
+		if (defined $a) {
+			($xc, $yc, $zc) = ($mol->{ATOMS}[$a - 1]{X}, $mol->{ATOMS}[$a - 1]{Y}, $mol->{ATOMS}[$a - 1]{Z});
+		} elsif (defined $group) {
+			foreach my $i (@{$index->{$group}}) {
+				push @$list, $mol->{ATOMS}[$i-1];
+			}
+			($xc, $yc, $zc) = centroid($mol, $list);
+		} else {
+			(undef, undef, undef, undef, undef, undef, $xc, $yc, $zc) = molecule_centre($largest);
+		}
+		
+		# Move segments within cell
+		foreach my $newmol (@$newmols) {
+		
+			# Move largest segment to be in centre of cell
+			molecule_translate($newmol, -$xc+$cell->[0]/2, -$yc+$cell->[1]/2, -$zc+$cell->[2]/2);
+			
+			# Move all the molecules into the cell
+			mol_move_into_cell($newmol, $cell);
+		}
+		
+		# Recombine the fragments	
+		my $consolidated = ensemble_consolidate($newmols);
+		my $final = $consolidated->[0];
+		
+		# Translate the centre to 0, 0, 0 if required 
+		if ($translate) {
+			print "\nMoving cell centre to (0, 0, 0)\n";
+			molecule_translate($final, -$cell->[0]/2, -$cell->[1]/2, -$cell->[2]/2) if $translate;
+		}
+		
+		molecule_copy_header($mol, $final);
+		mol_copy_unit_cell($mol, $final);
+		$final->{NAME} = $mol->{NAME};
+		
+		print "\nFinal:\n";
+		@$cell = calc_box_size($final);
+		
+		push @$ens, $final;
+	}
+		
+	write_mol_any($ens, $obase, $oformat);
+	silico_msg('c', "\n");
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

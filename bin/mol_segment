@@ -1,0 +1,136 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_segment
+#? Split all molecules in file to separate molecules 
+#  (based on connectivities) and recombine them in to a single molecule.
+#  Each molecule is placed in a separate segment (M001 ... MXXX).
+#SF  
+#. Created: DKC 2001
+#. $Revision: 1.19.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+use vars qw($debug);
+my $obase;
+my $oformat;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title ("mol_segment", '$Revision: 1.19.2.1.2.1 $');
+
+require silico_split;
+
+@arguments = get_arguments2('>=1');
+set_default_oappend('seg');
+
+# The main loop
+foreach $arg (@arguments) {
+	
+	my $count;
+	my $mol;
+	my $mols;
+	my $newmols;
+	my $newmols2;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any ($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	($obase, $oformat) = get_ofilename2($mols);
+
+	foreach $mol (@$mols) {
+		molecule_check_and_fix_connectivity($mol);
+	}
+
+	$newmols = ensemble_split($mols);
+	
+	# Rename each segment 
+	$count = 0;
+	foreach $mol (@$newmols) {
+		
+		my $atom;
+		my $segid;
+		
+		++$count;
+		$segid = sprintf "M%03d", $count;
+		
+		foreach $atom (atoms($mol)) {
+			$atom->{SEGID} = $segid;
+		}
+	}
+	
+	$newmols2 = ensemble_consolidate($newmols);
+	ensemble_printout($newmols2) if ($Silico::debug);
+
+	write_mol_any($newmols2, $obase, $oformat);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

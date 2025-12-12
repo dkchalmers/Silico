@@ -1,0 +1,109 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_mopac
+#? Read any Silico format and write a MOPAC Cartesian file.
+#SF
+#. Created: DKC 2000.
+#. $Revision: 1.1.2.2.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("write_mopac", '$Revision: 1.1.2.2.2.1 $');
+
+require silico_mopac;
+
+$Silico::debug = $Silico::debug;
+
+@arguments = get_arguments2('>=1');
+
+foreach $arg (@arguments) {
+
+	my $ens;
+	my $filebase;
+	
+	print "File: $arg\n" if (!get_flag('quiet', 'l'));
+	
+	$filebase = get_filebase($arg);
+	$ens = read_mol_any($arg);
+	
+	if (!defined $ens) {
+		silico_msg('e', "No molecule data read from file $arg!\n",
+				"Skipping.\n");
+		next;
+	}
+	
+	ensemble_printout($ens) if $Silico::debug;
+	
+	write_mopac_cart($ens);
+	
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

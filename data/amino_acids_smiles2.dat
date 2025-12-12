@@ -1,0 +1,100 @@
+#   COPYRIGHT  NOTICE
+#   
+#   Silico  -  A  Perl  Molecular  Toolkit
+#   Copyright  (C)  2008-15  David  K.  Chalmers  and  Benjamin  P.  Roberts,
+#   Department  of  Medicinal  Chemistry,  Monash  University
+#   
+#   This  program  is  free  software:  you  can  redistribute  it  and/or  modify
+#   it  under  the  terms  of  the  GNU  General  Public  License  as  published  by
+#   the  Free  Software  Foundation,  either  version      of  the  License,  or
+#   (at  your  option)  any  later  version.
+#   
+#   This  program  is  distributed  in  the  hope  that  it  will  be  useful,
+#   but  WITHOUT  ANY  WARRANTY;  without  even  the  implied  warranty  of
+#   MERCHANTABILITY  or  FITNESS  FOR  A  PARTICULAR  PURPOSE.   See  the
+#   GNU  General  Public  License  for  more  details.
+#   
+#   You  should  have  received  a  copy  of  the  GNU  General  Public  License
+#   along  with  this  program.   If  not,  see  <http://www.gnu.org/licenses/>.
+#<
+#?  Data  file  containing  SMILES  strings  for  amino  acid  residues.
+#>
+
+#  SMILES			Name  			Code  A01  A02  A03  A04  A05  A06  A07  A08  A09  A10  A11  A12  A13  A14  A15
+
+#############################################################################################
+#  Standard  amino  acids                                                                   #
+#############################################################################################
+
+# Alanine
+CC(N)C=O			Alanine  		ALA   CB   CA   N    C   O 
+
+#  Arginine
+N=C(N)NCCCC(N)C=O		Arginine  		ARG   N1   CZ   N2  NE   CD   CG   CB   CA   N    C    O
+
+# Asparagine
+NC(=O)CC(N)C=O			Asparigine  		ASN   ND2  CG   OD1  CB   CA   N    C    O
+
+# Aspartic  acid
+OC(=O)CC(N)C=O			Aspartic_acid  		ASP   OD2  CG   OD1  CB   CA   N    C    O
+
+# Cysteine
+SCC(N)C=O			Cysteine  		CYS   SG   CB   CA   N    C    O
+
+# Glycine
+O=CCN				Glycine  		GLY   O    C    CA   N
+
+# Histidine
+
+# Glutamine
+NC(=O)CCC(N)C=O			Glutamine  		GLN   NE2  CD   OE1  CG   CB   CA   N    C    O
+
+# Glutamic  acid
+O-C(=O)CCC(N)C=O		Glutamic_acid  		GLU   OE2  CD   OE1  CG   CB   CA   N    C    O
+
+# Isoleucine
+CCC(C)C(N)C=O			Isoleucine  		ILE   CD1  CG1  CB   CG2  CA   N    C    O
+
+# Leucine
+CC(C)CC(N)C=O			Leucine  		LEU   CD2  CG   CD1  CB   CA   N    C    O
+
+# Methionine
+CSCCC(N)C=O			Methionine  		MET   CE   SD   CG   CB   CA   N    C    O
+
+# Phenylalanine
+O=CC(Cc1ccccc1)N		Phenylalanine  		PHE   O    C    CA   CB   CG   CD1  CE1  CZ   CE2  CD2  N
+
+# Proline
+O=CC1CCCN1			Proline  		PRO   O    C    CA   CB   CG   CD   N
+
+# Serine
+OCC(N)C=O			Serine  		SER   OG   CB   CA   N    C    O
+
+# Threonine
+CC(O)C(N)C=O			Threonine  		THR   CG2  CB   OG1  CA   N    C    O
+
+# Tryptophan
+O=CC(CC1=CNc2ccccc12)N		Tryptophan  		TRP   O    C    CA   CB   CG   CD1  NE1  CE2  CZ2  CH2  CZ3  CE3  CD2  N
+
+# Tyrosine
+Oc1ccc(CC(N)C=O)cc1		Tyrosine  		TYR   OH   CZ   CE2  CD2  CG   CB   CA   N    C    O    CD1  CE1
+
+# Valine
+CC(C)C(N)C=O			Valine  		VAL   CG2  CB   CG1  CA   N    C    O
+
+#############################################################################################
+#  Nonstandard  amino  acids                                                                                          #
+#############################################################################################
+
+# 2-Aminoisobutyric  acid  (alpha-methyl  alanine)
+CC(C)(N)C=O			2-Aminoisobyriric_acid  AIB  CB1  CA   CB2  N    C    O
+
+# p-Iodo-Phe
+Ic1ccc(CC(N)C=O)cc1             4-Iodophenylalanine 	PHI  I    CZ   CE1  CD1  CG   CB   CA   N    C    O    CD2  CE2   
+
+# Ornithine
+NCCCC(N)C=O			Ornithine  		ORN  NE   CD   CG   CB   CA   N    C    O
+
+# Sarcosine  (N-methyl  glycine)  
+CNCC=O				Sarcosine  		SAR  CN   N    CA   C O
+

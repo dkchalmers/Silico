@@ -1,0 +1,182 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_backbone
+#? Delete all non-backbone atoms from a molecule.
+#. Uses atom labels to determine which atoms should
+#  be kept. Default set is {N, CA, C, O}. This can
+#  be further reduced to CA atoms only by use of the
+#  -ca flag, as below.
+#F
+#; -ca Keep only CA atoms
+#SF
+#. $Revision: 1.16.2.1.2.3 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $ca;
+my $oname;
+my $options;
+my @set;
+my $starttime = (times)[0];
+my $string;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("backbone", '$Revision: 1.16.2.1.2.3 $');
+
+$ca = make_flag('ca', 'keep-CA', 'Keep only CA atoms');
+
+@arguments = get_arguments2('>=1');
+
+$string = "back";
+@set = qw(C CA N O);
+
+if ($ca) {
+
+	@set = qw(CA);
+	$string = "ca";
+}
+
+silico_msg('c', "Keeping atom set: @set\n",
+		"\n");
+
+add_option('NOSORT', $options);
+add_option('QUIET', $options);
+
+foreach $arg (@arguments) {
+	
+	my $i;
+	my $mol;
+	my $mols;
+	my $newmols;
+	my $outfile;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$i = 0;
+	foreach $mol (@$mols) {
+	
+		my $atom;
+		my $count;
+		
+		++$i;
+		silico_msg('c', "Molecule: $i\n");
+	
+		my $newmol;
+		
+		$newmol->{NAME} = $mol->{NAME};
+		
+		$count = 0;
+		foreach $atom (atoms($mol)) {
+			
+			my $flag;
+			my $name;
+			
+			$name = $atom->{NAME};
+			
+			$name =~ s/\s//g;
+			$name = uc $name;
+			
+			$flag = 0;
+			
+			foreach (@set) {
+				$flag = 1 if $name eq $_;
+			}
+			
+			next if !$flag;
+			
+			++$count;
+			
+			push @{$newmol->{ATOMS}}, $atom;
+			++$newmol->{NUMATOMS};
+			
+			delete $atom->{CONNECT};
+			delete $atom->{BORDERS};
+		}
+		
+		silico_msg('c', "Retained $count atoms\n");
+		
+		next if $count == 0;
+		
+		$newmol->{NUMBONDS} = 0;
+		$newmol->{SDF_DATA} = $mol->{SDF_DATA};
+		
+		push @$newmols, $newmol;
+	}
+	
+	my $filebase = get_filebase($arg);
+	write_mol_any($newmols, "$filebase\_back", get_oformat($mols));
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

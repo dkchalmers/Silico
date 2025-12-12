@@ -1,0 +1,223 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! residue_distance
+#? Calculate distance of each residue (or atom) in <comparison_mol> to atoms in <source_mol>.  Put the data into
+#  pdb temperature factor column and or charge field
+#. Useful to calculate how close each protein residue is to a ligand
+#. Use: residue_distance <source_mol> <comparison_mol1> <comparison_mol2> ...
+#F
+#; -a  Colour by atom rather than residue distance
+#; -k Retain only residues (or atoms) closer than 'dist' in output file
+#; -d_<dist> Retain dist
+
+#SF
+#. $Revision: 1.7.2.1.2.1 $
+#. Created: DKC Jan 2008
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $atom1;
+my $atom2;
+my $arg;
+my @arguments;
+my $count;
+my $distance;
+my $mols;
+my $mol1;
+my $mol2;
+my $newmols;
+my $res;
+my $starttime = (times)[0];
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("residue_distance", '$Revision: 1.7.2.1.2.1 $');
+
+my $use_atoms = make_flag('a', 'atoms', "Colour by atom rather than residue distance");
+my $keep_atoms = make_flag('k', 'keep', "Retain only residues (or atoms) closer than distance set using the -d flag");
+my $keep_atoms_dist = make_flag('d', 'keep-dist', "Retain distance", 1, 5);
+
+@arguments = get_arguments2('>=2');
+
+$arg= shift @arguments;
+
+$mols = read_mol_any ($arg);
+if (!defined $mols) {
+	silico_msg('d', "Can not read any molecule data from file $arg!\n");
+}
+
+$mol1 = $mols->[0];
+
+my $string = '';
+
+if ($use_atoms) {
+	$string = 'atdist';
+} else {
+	$string = 'resdist';
+}
+
+if ($keep_atoms) {
+
+	$string .= "_".$keep_atoms;
+}
+set_default_oappend ($string) if $string;
+
+foreach $arg (@arguments) {
+
+	$mols = read_mol_any ($arg);
+	if (!defined $mols) {
+		silico_msg('e', "Can not read any molecule data from file $arg!\n",
+				"Skipping.\n");
+		next;
+	}
+	
+	foreach $mol2 (@$mols) {
+	
+		# Clear all existing tempeature factors
+		foreach $atom2 (atoms($mol2)) {
+			$atom2->{TEMP} = 0;
+			$atom2->{CHARGE} = 0;
+		}
+		
+		my $newmol = molecule_copy_noatoms($mol2);
+		my $retained = 0;
+		
+		if ($use_atoms) {
+				
+
+			foreach $atom2 (atoms($mol2)) {
+			
+				my $min = 99999;
+				
+				foreach $atom1 (atoms($mol1)) {
+			
+					next if abs($atom1->{X} - $atom2->{X}) > $min;
+					next if abs($atom1->{Y} - $atom2->{Y}) > $min;
+					next if abs($atom1->{Z} - $atom2->{Z}) > $min;
+					
+					$distance = distance($atom1, $atom2);
+					
+					next if $distance > $min;
+					$min = $distance;
+				}
+				
+				$atom2->{TEMP} = $min;
+				$atom2->{CHARGE} = $min;
+					
+				if ($keep_atoms && $min < $keep_atoms_dist) {
+					push @{$newmol->{ATOMS}}, $atom2;
+					++$retained;
+				}
+			}
+			
+		} else {
+		
+			my $residues = molecule_get_residues($mol2);
+
+			foreach $res (@$residues) {
+	
+				my $min = 99999;
+	
+				foreach $atom2 (@$res) {
+			
+					foreach $atom1 (atoms($mol1)) {
+					
+						next if abs($atom1->{X} - $atom2->{X}) > $min;
+						next if abs($atom1->{Y} - $atom2->{Y}) > $min;
+						next if abs($atom1->{Z} - $atom2->{Z}) > $min;
+						
+						$distance = distance($atom1, $atom2);
+					
+						next if $distance > $min;
+						$min = $distance;
+					}
+				}
+				
+				foreach $atom2 (@$res) {
+				
+					$atom2->{TEMP} = $min;
+					$atom2->{CHARGE} = $min;
+
+					if ($keep_atoms && $min < $keep_atoms_dist) {
+						push @{$newmol->{ATOMS}}, $atom2;
+						++$retained;
+					}
+				}
+			}
+		}
+
+		print "Retained $retained atoms for molecule $mol2->{NAME}\n" if $keep_atoms;
+		push @$newmols, $newmol;
+	}		
+	
+	if ($keep_atoms) {
+		write_pdb($newmols, undef);
+	} else {
+		write_mol_any($mols, undef);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

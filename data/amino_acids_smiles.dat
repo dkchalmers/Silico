@@ -1,0 +1,617 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#!  amino_acids_smiles.dat
+#? Data file containing SMILES strings corresponding to amino acid residues.
+#  The following conventions are used for protonation-state suffixes:
+#. Side chains ("S" column)
+#, - "0": standard.
+#, - "S": Substitution on terminal S, e.g., in disulfide (CYS).
+#, - "X": Deprotonation on NZ (LYS).
+#, - "F": Deprotonation on NE (ARG).
+#, - "J": Deprotonation on NH (ARG).
+#, - "D": Protonation on ND but not NE (HIS).
+#, - "E": Protonation on NE but not ND (HIS).
+#, - "H": Protonation of the side-chain carboxylate (ASP, GLU).
+#. Backbones ("B" column)
+#, - "0": standard (intrapeptide).
+#, - "N": N-terminal amino acid, protonated on terminal n
+#, - "T": n-terminal amino acid, neuTral on terminal n
+#, - "C": C-terminal amino acid, deprotonated on terminal carboxylate
+#, - "O": c-terminal amino acid, neutral
+#, - "A": Acidic isolated amino acid (fully protonated)
+#, - "B": Basic isolated amino acid (fully deprotonated)
+#, - "U": isolated amino acid with neUtral backbone
+#, - "Z": isolated amino acid with Zwitterionic backbone
+#. Atom names are given next. These are the standard atom names, as
+#  obtained from the PDB specifications. The following variations are
+#  observed (where the PDB is not specific enough):
+#. - Arginine: where deprotonation has occurred on an eta nitrogen,
+#    the deprotonated nitrogen is called "NH1" (since it has 1 proton attached).
+#    Its counterpart with two protons is called "NH2".
+#>
+
+# SMILES string				AA  S B Atom Names
+
+
+#
+# Normal amino acids and usual unusual AAs
+#
+
+# Alanine
+CC([NH!H])[C!H]=O			ALA 0 0 CB  CA  N   C   O
+CC([NH3+])[C!H]=O			ALA 0 N CB  CA  N   C   O
+CC(N)[C!H]=O				ALA 0 T CB  CA  N   C   O
+CC([NH!H])C([O-])=O			ALA 0 C CB  CA  N   C   OXT O
+CC([NH!H])C(O)=O			ALA 0 O CB  CA  N   C   OXT O
+CC([NH3+])C(O)=O			ALA 0 A CB  CA  N   C   OXT O
+CC(N)C([O-])=O				ALA 0 B CB  CA  N   C   OXT O
+CC(N)C(O)=O				ALA 0 U CB  CA  N   C   OXT O
+CC([NH3+])C([O-])=O			ALA 0 Z CB  CA  N   C   OXT O
+
+# Aminobutyric acid
+CCC([NH!H])[C!H]=O			ABU 0 0 CG CB  CA  N   C   O
+CCC([NH3+])[C!H]=O			ABU 0 N CG CB  CA  N   C   O
+CCC(N)[C!H]=O				ABU 0 T CG CB  CA  N   C   O
+CCC([NH!H])C([O-])=O			ABU 0 C CG CB  CA  N   C   OXT O
+CCC([NH!H])C(O)=O			ABU 0 O CG CB  CA  N   C   OXT O
+CCC([NH3+])C(O)=O			ABU 0 A CG CB  CA  N   C   OXT O
+CCC(N)C([O-])=O				ABU 0 B CG CB  CA  N   C   OXT O
+CCC(N)C(O)=O				ABU 0 U CG CB  CA  N   C   OXT O
+CCC([NH3+])C([O-])=O			ABU 0 Z CG CB  CA  N   C   OXT O
+
+# Arginine, side chain +ve, positive charge on CZ
+N[C+](N)NCCCC([NH!H])[C!H]=O		ARG 0 0 NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+N[C+](N)NCCCC([NH3+])[C!H]=O		ARG 0 N NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+NC(CCCN[C+](N)N)[C!H]=O			ARG 0 T N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   O
+N[C+](N)NCCCC([NH!H])C([O-])=O		ARG 0 C NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+N[C+](N)NCCCC([NH!H])C(O)=O		ARG 0 O NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+N[C+](N)NCCCC([NH3+])C(O)=O		ARG 0 A NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(CCCN[C+](N)N)C([O-])=O		ARG 0 B N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   OXT O
+NC(CCCN[C+](N)N)C(O)=O			ARG 0 U N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   OXT O
+N[C+](N)NCCCC([NH3+])C([O-])=O		ARG 0 Z NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+
+# Arginine, side chain +ve, positive charge on CZ (some protonation forms missing here!)
+NC(=[NH2+])NCCCC([NH!H])[C!H]=O         ARG 0 0 NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+
+# Arginine, side chain +ve, positive charge on NE
+NC(N)=[NH+]CCCC([NH!H])[C!H]=O		ARG 0 0 NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+NC(CCC[NH+]=C(N)N)[C!H]=O		ARG 0 T N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   O
+NC(N)=[NH+]CCCC([NH3+])[C!H]=O		ARG 0 N NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+NC(N)=[NH+]CCCC([NH3+])C([O-])=O	ARG 0 Z NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(CCC[NH+]=C(N)N)C(O)=O		ARG 0 U N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   OXT O
+NC(CCC[NH+]=C(N)N)C([O-])=O		ARG 0 B N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   OXT O
+NC(N)=[NH+]CCCC([NH3+])C(O)=O		ARG 0 A NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(N)=[NH+]CCCC([NH!H])C([O-])=O	ARG 0 C NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(N)=[NH+]CCCC([NH!H])C(O)=O		ARG 0 O NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+
+# Arginine, side chain neutral, protonated on both NH but not NE
+NC(N)=NCCCC([NH!H])[C!H]=O		ARG F 0 NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+NC(N)=NCCCC([NH3+])[C!H]=O		ARG F N NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   O
+NC(CCCN=C(N)N)[C!H]=O			ARG F T N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   O
+NC(N)=NCCCC([NH!H])C([O-])=O		ARG F C NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(N)=NCCCC([NH!H])C(O)=O		ARG F O NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(N)=NCCCC([NH3+])C(O)=O		ARG F A NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+NC(CCCN=C(N)N)C([O-])=O			ARG F B N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   OXT O
+NC(CCCN=C(N)N)C(O)=O			ARG F U N   CA  CB  CG  CD  NE  CZ  NH1 NH2 C   OXT O
+NC(N)=NCCCC([NH3+])C([O-])=O		ARG F Z NH1 CZ  NH2 NE  CD  CG  CB  CA  N   C   OXT O
+
+# Arginine, side chain neutral, protonated on NE and one of the two NH
+NC(=N)NCCCC([NH!H])[C!H]=O		ARG J 0 NH2 CZ  NH1 NE  CD  CG  CB  CA  N   C   O
+NC(=N)NCCCC([NH3+])[C!H]=O		ARG J N NH2 CZ  NH1 NE  CD  CG  CB  CA  N   C   O
+NC(CCCNC(N)=N)[C!H]=O			ARG J T N   CA  CB  CG  CD  NE  CZ  NH2 NH1 C   O
+NC(=N)NCCCC([NH!H])C([O-])=O		ARG J C NH2 CZ  NH1 NE  CD  CG  CB  CA  N   C   OXT O
+NC(=N)NCCCC([NH!H])C(O)=O		ARG J O NH2 CZ  NH1 NE  CD  CG  CB  CA  N   C   OXT O
+NC(=N)NCCCC([NH3+])C(O)=O		ARG J A NH2 CZ  NH1 NE  CD  CG  CB  CA  N   C   OXT O
+NC(CCCNC(N)=N)C([O-])=O			ARG J B N   CA  CB  CG  CD  NE  CZ  NH2 NH1 C   OXT O
+NC(CCCNC(N)=N)C(O)=O			ARG J U N   CA  CB  CG  CD  NE  CZ  NH2 NH1 C   OXT O
+NC(=N)NCCCC([NH3+])C([O-])=O		ARG J Z NH2 CZ  NH1 NE  CD  CG  CB  CA  N   C   OXT O
+
+# Arginine, side chain neutral, functionalised on NH
+O=[C!H]NC(NCCCC([NH!H])[C!H]=O)=N[C!H]=O ARG 0 S O20 C1 NH1 CZ NE CD CG CB CA N C O NH2 C2 O4
+
+# Asparagine
+NC(=O)CC([NH!H])[C!H]=O			ASN 0 0 ND2 CG  OD1 CB  CA  N   C   O
+NC(=O)CC([NH3+])[C!H]=O			ASN 0 N ND2 CG  OD1 CB  CA  N   C   O
+NC(CC(N)=O)[C!H]=O			ASN 0 T N   CA  CB  CG  ND2 OD1 C   O
+NC(=O)CC([NH!H])C([O-])=O		ASN 0 C ND2 CG  OD1 CB  CA  N   C   OXT O
+NC(=O)CC([NH!H])C(O)=O			ASN 0 O ND2 CG  OD1 CB  CA  N   C   OXT O
+NC(=O)CC([NH3+])C(O)=O			ASN 0 A ND2 CG  OD1 CB  CA  N   C   OXT O
+NC(CC(N)=O)C([O-])=O			ASN 0 B N   CA  CB  CG  ND2 OD1 C   OXT O
+NC(CC(N)=O)C(O)=O			ASN 0 U N   CA  CB  CG  ND2 OD1 C   OXT O
+NC(=O)CC([NH3+])C([O-])=O		ASN 0 Z ND2 CG  OD1 CB  CA  N   C   OXT O
+
+# Aspartate
+[O-]C(=O)CC([NH!H])[C!H]=O		ASP 0 0 OD2 CG  OD1 CB  CA  N   C   O
+[NH3+]C(CC([O-])=O)[C!H]=O		ASP 0 N N   CA  CB  CG  OD2 OD1 C   O
+NC(CC([O-])=O)[C!H]=O			ASP 0 T N   CA  CB  CG  OD2 OD1 C   O
+[O-]C(=O)CC([NH!H])C([O-])=O		ASP 0 C OD2 CG  OD1 CB  CA  N   C   OXT O
+OC(=O)C(CC([O-])=O)[NH!H]		ASP 0 O OXT C   O   CA  CB  CG  OD2 OD1 N
+[NH3+]C(CC([O-])=O)C(O)=O		ASP 0 A N   CA  CB  CG  OD2 OD1 C   OXT O
+NC(CC([O-])=O)C([O-])=O			ASP 0 B N   CA  CB  CG  OD2 OD1 C   OXT O
+NC(CC([O-])=O)C(O)=O			ASP 0 U N   CA  CB  CG  OD2 OD1 C   OXT O
+[NH3+]C(CC([O-])=O)C([O-])=O		ASP 0 Z N   CA  CB  CG  OD2 OD1 C   OXT O
+
+# Aspartic acid
+OC(=O)CC([NH!H])[C!H]=O			ASP H 0 OD2 CG  OD1 CB  CA  N   C   O
+[NH3+]C(CC(O)=O)[C!H]=O			ASP H N N   CA  CB  CG  OD2 OD1 C   O
+NC(CC(O)=O)[C!H]=O			ASP H T N   CA  CB  CG  OD2 OD1 C   O
+OC(=O)CC([NH!H])C([O-])=O		ASP H C OD2 CG  OD1 CB  CA  N   C   OXT O
+OC(=O)CC([NH!H])C(O)=O			ASP H O OD2 CG  OD1 CB  CA  N   C   OXT O
+[NH3+]C(CC(O)=O)C(O)=O			ASP H A N   CA  CB  CG  OD2 OD1 C   OXT O
+NC(CC(O)=O)C([O-])=O			ASP H B N   CA  CB  CG  OD2 OD1 C   OXT O
+NC(CC(O)=O)C(O)=O			ASP H U N   CA  CB  CG  OD2 OD1 C   OXT O
+[NH3+]C(CC(O)=O)C([O-])=O		ASP H Z N   CA  CB  CG  OD2 OD1 C   OXT O
+
+# Substituted aspartic acid
+O=[C!H]CC([NH!H])[C!H]=O                ASP 0 S OD1  CG  CD  CA  N   C   O
+
+# Biphenylalanine                       
+O=[C!H]C(Cc1ccc(cc1)-c2ccccc2)[NH!H]    BPY 0 0 O   C  CA  CB  CG  CD1  CE1  CZ  CE2  CD2  CH  CT1  CK1  CL  CK2  CCT2  N   
+
+# Cysteine
+SCC([NH!H])[C!H]=O			CYS 0 0 SG  CB  CA  N   C   O
+[NH3+]C(CS)[C!H]=O			CYS 0 N N   CA  CB  SG  C   O
+NC(CS)[C!H]=O				CYS 0 T N   CA  CB  SG  C   O
+[O-]C(=O)C(CS)[NH!H]			CYS 0 C OXT C   O   CA  CB  SG  N
+OC(=O)C(CS)[NH!H]			CYS 0 O OXT C   O   CA  CB  SG  N
+[NH3+]C(CS)C(O)=O			CYS 0 A N   CA  CB  SG  C   OXT O
+NC(CS)C([O-])=O				CYS 0 B N   CA  CB  SG  C   OXT O
+NC(CS)C(O)=O				CYS 0 U N   CA  CB  SG  C   OXT O
+[NH3+]C(CS)C([O-])=O			CYS 0 Z N   CA  CB  SG  C   OXT O
+
+# Cysteine with substituted sulphur
+O=[C!H]C(C[S!H])[NH!H]			CYS S 0 O   C   CA  CB   SG  N
+[NH3+]C(C[S!H])[C!H]=O			CYS S N N   CA  CB  SG   C   O
+NC(C[S!H])[C!H]=O			CYS S T N   CA  CB  SG   C   O
+[O-]C(=O)C(C[S!H])[NH!H]		CYS S C OXT C   O   CA   CB  SG  N
+OC(=O)C(C[S!H])[NH!H]			CYS S O OXT C   O   CA   CB  SG  N
+[NH3+]C(C[S!H])C(O)=O			CYS S A N   CA  CB  SG   C   OXT O
+NC(C[S!H])C([O-])=O			CYS S B N   CA  CB  SG   C   OXT O
+NC(C[S!H])C(O)=O			CYS S U N   CA  CB  SG   C   OXT O
+[NH3+]C(C[S!H])C([O-])=O		CYS S Z N   CA  CB  SG   C   OXT O
+
+# Glutamate
+[O-]C(=O)CCC([NH!H])[C!H]=O		GLU 0 0 OE2 CD  OE1 CG  CB  CA  N   C   O
+[NH3+]C(CCC([O-])=O)[C!H]=O		GLU 0 N N   CA  CB  CG  CD  OE2 OE1 C   O
+NC(CCC([O-])=O)[C!H]=O			GLU 0 T N   CA  CB  CG  CD  OE2 OE1 C   O
+[O-]C(=O)CCC([NH!H])C([O-])=O		GLU 0 C OE2 CD  OE1 CG  CB  CA  N   C   OXT O
+OC(=O)C(CCC([O-])=O)[NH!H]		GLU 0 O OXT C   O   CA  CB  CG  CD  OE2 OE1 N
+[NH3+]C(CCC([O-])=O)C(O)=O		GLU 0 A N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+NC(CCC([O-])=O)C([O-])=O		GLU 0 B N   CA  CB  CG 	CD  OE2 OE1 C   OXT O
+NC(CCC([O-])=O)C(O)=O			GLU 0 U N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+[NH3+]C(CCC([O-])=O)C([O-])=O		GLU 0 Z N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+
+# Glutamic acid
+OC(=O)CCC([NH!H])[C!H]=O		GLU H 0 OE2 CD  OE1 CG  CB  CA  N   C   O
+[NH3+]C(CCC(O)=O)[C!H]=O		GLU H N N   CA  CB  CG  CD  OE2 OE1 C   O
+NC(CCC(O)=O)[C!H]=O			GLU H T N   CA  CB  CG  CD  OE2 OE1 C   O
+OC(=O)CCC([NH!H])C([O-])=O		GLU H C OE2 CD  OE1 CG  CB  CA  N   C   OXT O
+OC(=O)CCC([NH!H])C(O)=O			GLU H O OE2 CD  OE1 CG  CB  CA  N   C   OXT O
+[NH3+]C(CCC(O)=O)C(O)=O			GLU H A N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+NC(CCC(O)=O)C([O-])=O			GLU H B N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+NC(CCC(O)=O)C(O)=O			GLU H U N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+[NH3+]C(CCC(O)=O)C([O-])=O		GLU H Z N   CA  CB  CG  CD  OE2 OE1 C   OXT O
+
+# Glutamine
+NC(=O)CCC([NH!H])[C!H]=O		GLN 0 0 NE2 CD  OE1 CG  CB  CA  N   C   O
+NC(=O)CCC([NH3+])[C!H]=O		GLN 0 N NE2 CD  OE1 CG  CB  CA  N   C   O
+NC(CCC(N)=O)[C!H]=O			GLN 0 T N   CA  CB  CG  CD  NE2 OE1 C   O
+NC(=O)CCC([NH!H])C([O-])=O		GLN 0 C NE2 CD  OE1 CG  CB  CA  N   C   OXT O
+NC(=O)CCC([NH!H])C(O)=O			GLN 0 O NE2 CD  OE1 CG  CB  CA  N   C   OXT O
+NC(=O)CCC([NH3+])C(O)=O			GLN 0 A NE2 CD  OE1 CG  CB  CA  N   C   OXT O
+NC(CCC(N)=O)C([O-])=O			GLN 0 B N   CA  CB  CG  CD  NE2 OE1 C   OXT O
+NC(CCC(N)=O)C(O)=O			GLN 0 U N   CA  CB  CG  CD  NE2 OE1 C   OXT O
+NC(=O)CCC([NH3+])C([O-])=O		GLN 0 Z NE2 CD  OE1 CG  CB  CA  N   C   OXT O
+
+# Glycine
+O=[C!H]C[NH!H]				GLY 0 0 O   C   CA  N
+[NH3+]C[C!H]=O				GLY 0 N N   CA  C   O
+NC[C!H]=O				GLY 0 T N   CA  C   O
+[O-]C(=O)C[NH!H]			GLY 0 C OXT C   O   CA  N
+OC(=O)C[NH!H]				GLY 0 O OXT C   O   CA  N
+[NH3+]CC(O)=O				GLY 0 A N   CA  C   OXT O
+NCC([O-])=O				GLY 0 B N   CA  C   OXT O
+NCC(O)=O				GLY 0 U N   CA  C   OXT O
+[NH3+]CC([O-])=O			GLY 0 Z N   CA  C   OXT O
+
+# Histidine, side chain protonated on ND
+O=[C!H]C(CC1=CN=CN1)[NH!H]		HIS D 0 O   C   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[NH3+]C(CC1=CN=CN1)[C!H]=O		HIS D N N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+NC(CC1=CN=CN1)[C!H]=O			HIS D T N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+[O-]C(=O)C(CC1=CN=CN1)[NH!H]		HIS D C OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+OC(=O)C(CC1=CN=CN1)[NH!H]		HIS D O OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[NH3+]C(CC1=CN=CN1)C(O)=O		HIS D A N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CN=CN1)C([O-])=O			HIS D B N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CN=CN1)C(O)=O			HIS D U N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=CN=CN1)C([O-])=O		HIS D Z N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+
+# Histidine, side chain protonated on NE
+O=[C!H]C(CC1=CNC=N1)[NH!H]		HIS E 0 O   C   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[NH3+]C(CC1=CNC=N1)[C!H]=O		HIS E N N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+NC(CC1=CNC=N1)[C!H]=O			HIS E T N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+[O-]C(=O)C(CC1=CNC=N1)[NH!H]		HIS E C OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+OC(=O)C(CC1=CNC=N1)[NH!H]		HIS E O OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[NH3+]C(CC1=CNC=N1)C(O)=O		HIS E A N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CNC=N1)C([O-])=O			HIS E B N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CNC=N1)C(O)=O			HIS E U N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=CNC=N1)C([O-])=O		HIS E Z N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+
+# Histidine, side chain protonated on ND and NE
+# (three permutations correspond to several of the resonance contributors)
+O=[C!H]C(CC1=C[NH+]=CN1)[NH!H]		HIS 0 0 O   C   CA  CB  CG  CD2 NE2 CE1 ND1 N
+O=[C!H]C(CC1=CNC=[NH+]1)[NH!H]		HIS 0 0 O   C   CA  CB  CG  CD2 NE2 CE1 ND1 N
+O=[C!H]C(CC1=CN[CH+]N1)[NH!H]		HIS 0 0 O   C   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[NH3+]C(CC1=C[NH+]=CN1)[C!H]=O		HIS 0 N N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+[NH3+]C(CC1=CNC=[NH+]1)[C!H]=O		HIS 0 N N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+[NH3+]C(CC1=CN[CH+]N1)[C!H]=O		HIS 0 N N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+NC(CC1=C[NH+]=CN1)[C!H]=O		HIS 0 T N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+NC(CC1=CNC=[NH+]1)[C!H]=O		HIS 0 T N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+NC(CC1=CN[CH+]N1)[C!H]=O		HIS 0 T N   CA  CB  CG  CD2 NE2 CE1 ND1 C   O
+[O-]C(=O)C(CC1=C[NH+]=CN1)[NH!H]	HIS 0 C OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[O-]C(=O)C(CC1=CNC=[NH+]1)[NH!H]	HIS 0 C OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[O-]C(=O)C(CC1=CN[CH+]N1)[NH!H]		HIS 0 C OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+OC(=O)C(CC1=C[NH+]=CN1)[NH!H]		HIS 0 O OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+OC(=O)C(CC1=CNC=[NH+]1)[NH!H]		HIS 0 O OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+OC(=O)C(CC1=CN[CH+]N1)[NH!H]		HIS 0 O OXT C   O   CA  CB  CG  CD2 NE2 CE1 ND1 N
+[NH3+]C(CC1=C[NH+]=CN1)C(O)=O		HIS 0 A N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=CNC=[NH+]1)C(O)=O		HIS 0 A N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=CN[CH+]N1)C(O)=O		HIS 0 A N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=C[NH+]=CN1)C([O-])=O		HIS 0 B N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CNC=[NH+]1)C([O-])=O		HIS 0 B N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CN[CH+]N1)C([O-])=O		HIS 0 B N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=C[NH+]=CN1)C(O)=O		HIS 0 U N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CNC=[NH+]1)C(O)=O		HIS 0 U N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+NC(CC1=CN[CH+]N1)C(O)=O			HIS 0 U N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=C[NH+]=CN1)C([O-])=O	HIS 0 Z N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=CNC=[NH+]1)C([O-])=O	HIS 0 Z N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+[NH3+]C(CC1=CN[CH+]N1)C([O-])=O		HIS 0 Z N   CA  CB  CG  CD2 NE2 CE1 ND1 C   OXT O
+
+# Homocysteine
+SCCC([NH!H])[C!H]=O			HSE 0 0 SD  CB  CA  N   C   O
+[NH3+]C(CCS)[C!H]=O			HSE 0 N N   CA  CB  SD  C   O
+NC(CCS)[C!H]=O				HSE 0 T N   CA  CB  SD  C   O
+[O-]C(=O)C(CCS)[NH!H]			HSE 0 C OXT C   O   CA  CB  SD  N
+OC(=O)C(CCS)[NH!H]			HSE 0 O OXT C   O   CA  CB  SD  N
+[NH3+]C(CCS)C(O)=O			HSE 0 A N   CA  CB  SD  C   OXT O
+NC(CCS)C([O-])=O			HSE 0 B N   CA  CB  SD  C   OXT O
+NC(CCS)C(O)=O				HSE 0 U N   CA  CB  SD  C   OXT O
+[NH3+]C(CCS)C([O-])=O			HSE 0 Z N   CA  CB  SD  C   OXT O
+
+# Homocysteine with substituted sulphur
+O=[C!H]C(CC[S!H])[NH!H]			HSE S 0 O   C   CA  CB  CD   SD  N
+[NH3+]C(CC[S!H])[C!H]=O			HSE S N N   CA  CB  CD  SD   C   O
+NC(CC[S!H])[C!H]=O			HSE S T N   CA  CB  CD  SD   C   O
+[O-]C(=O)C(CC[S!H])[NH!H]		HSE S C OXT C   O   CA   CB  CD  SD  N
+OC(=O)C(CC[S!H])[NH!H]			HSE S O OXT C   O   CA   CB  CD  SD  N
+[NH3+]C(CC[S!H])C(O)=O			HSE S A N   CA  CB  CD  SD   C   OXT O
+NC(CC[S!H])C([O-])=O			HSE S B N   CA  CB  CD  SD   C   OXT O
+NC(CC[S!H])C(O)=O			HSE S U N   CA  CB  CD  SD   C   OXT O
+[NH3+]C(CC[S!H])C([O-])=O		HSE S Z N   CA  CB  CD  SD   C   OXT O
+
+# Homolysine, protonated side chain
+[NH3+]CCCCCC([NH!H])[C!H]=O		HLY 0 0 NH  CZ  CE  CD  CG  CB  CA  N   C   O
+[NH3+]CCCCCC([NH3+])[C!H]=O		HLY 0 N NH  CZ  CE  CD  CG  CB  CA  N   C   O
+NC(CCCCC[NH3+])[C!H]=O			HLY 0 T N   CA  CB  CG  CD  CE  CZ  NH  C   O
+[NH3+]CCCCCC([NH!H])C([O-])=O		HLY 0 C NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+[NH3+]CCCCCC([NH!H])C(O)=O		HLY 0 O NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+[NH3+]CCCCCC([NH3+])C(O)=O		HLY 0 A NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+NC(CCCCC[NH3+])C([O-])=O		HLY 0 B N   CA  CB  CG  CD  CE  CZ  NH  C   OXT O
+NC(CCCCC[NH3+])C(O)=O			HLY 0 U N   CA  CB  CG  CD  CE  CZ  NH  C   OXT O
+[NH3+]CCCCCC([NH3+])C([O-])=O		HLY 0 Z NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+
+# Homolysine, neutral side chain
+NCCCCCC([NH!H])[C!H]=O			HLY X 0 NH  CZ  CE  CD  CG  CB  CA  N   C   O
+NCCCCCC([NH3+])[C!H]=O			HLY X N NH  CZ  CE  CD  CG  CB  CA  N   C   O
+NCCCCCC(N)[C!H]=O			HLY X T NH  CZ  CE  CD  CG  CB  CA  N   C   O
+NCCCCCC([NH!H])C([O-])=O		HLY X C NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCCC([NH!H])C(O)=O			HLY X O NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCCC([NH3+])C(O)=O			HLY X A NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCCC(N)C([O-])=O			HLY X B NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCCC(N)C(O)=O			HLY X U NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCCC([NH3+])C([O-])=O		HLY X Z NH  CZ  CE  CD  CG  CB  CA  N   C   OXT O
+
+# Homolysine, NE substituted
+O=[C!H]C(CCCCC[NH!H])[NH!H]		HLY S 0 O   C    CA  CB CG  CD  CE  CZ  NH   N 
+ 
+# Homoserine
+OCCC([NH!H])[C!H]=O			SER 0 0 OD  CB  CA  N   C   O
+[NH3+]C(CCO)[C!H]=O			SER 0 N N   CA  CB  OD  C   O
+NC(CCO)[C!H]=O				SER 0 T N   CA  CB  OD  C   O
+OCCC([NH!H])C([O-])=O			SER 0 C OD  CG  CB  CA  N   C   OXT O
+OCCC([NH!H])C(O)=O			SER 0 O OD  CG  CB  CA  N   C   OXT O
+[NH3+]C(CCO)C(O)=O			SER 0 A N   CA  CB  CG  OD  C   OXT O
+NC(CCO)C([O-])=O			SER 0 B N   CA  CB  CG  OD  C   OXT O
+NC(CCO)C(O)=O				SER 0 U N   CA  CB  CG  OD  C   OXT O
+[NH3+]C(CCO)C([O-])=O			SER 0 Z N   CA  CB  CG  OD  C   OXT O
+ 
+# Isoleucine
+CCC(C)C([NH!H])[C!H]=O			ILE 0 0 CD1 CG1 CB  CG2 CA  N   C   O
+CCC(C)C([NH3+])[C!H]=O			ILE 0 N CD1 CG1 CB  CG2 CA  N   C   O
+CCC(C)C(N)[C!H]=O			ILE 0 T CD1 CG1 CB  CG2 CA  N   C   O
+CCC(C)C([NH!H])C([O-])=O		ILE 0 C CD1 CG1 CB  CG2 CA  N   C   OXT O
+CCC(C)C([NH!H])C(O)=O			ILE 0 O CD1 CG1 CB  CG2 CA  N   C   OXT O
+CCC(C)C([NH3+])C(O)=O			ILE 0 A CD1 CG1 CB  CG2 CA  N   C   OXT O
+CCC(C)C(N)C([O-])=O			ILE 0 B CD1 CG1 CB  CG2 CA  N   C   OXT O
+CCC(C)C(N)C(O)=O			ILE 0 U CD1 CG1 CB  CG2 CA  N   C   OXT O
+CCC(C)C([NH3+])C([O-])=O		ILE 0 Z CD1 CG1 CB  CG2 CA  N   C   OXT O
+
+# Leucine
+CC(C)CC([NH!H])[C!H]=O			LEU 0 0 CD2 CG  CD1 CB  CA  N   C   O
+CC(C)CC([NH3+])[C!H]=O			LEU 0 N CD2 CG  CD1 CB  CA  N   C   O
+CC(C)CC(N)[C!H]=O			LEU 0 T CD2 CG  CD1 CB  CA  N   C   O
+CC(C)CC([NH!H])C([O-])=O		LEU 0 C CD2 CG  CD1 CB  CA  N   C   OXT O
+CC(C)CC([NH!H])C(O)=O			LEU 0 O CD2 CG  CD1 CB  CA  N   C   OXT O
+CC(C)CC([NH3+])C(O)=O			LEU 0 A CD2 CG  CD1 CB  CA  N   C   OXT O
+CC(C)CC(N)C([O-])=O			LEU 0 B CD2 CG  CD1 CB  CA  N   C   OXT O
+CC(C)CC(N)C(O)=O			LEU 0 U CD2 CG  CD1 CB  CA  N   C   OXT O
+CC(C)CC([NH3+])C([O-])=O		LEU 0 Z CD2 CG  CD1 CB  CA  N   C   OXT O
+
+# Lysine, protonated side chain
+[NH3+]CCCCC([NH!H])[C!H]=O		LYS 0 0 NZ  CE  CD  CG  CB  CA  N   C   O
+[NH3+]CCCCC([NH3+])[C!H]=O		LYS 0 N NZ  CE  CD  CG  CB  CA  N   C   O
+NC(CCCC[NH3+])[C!H]=O			LYS 0 T N   CA  CB  CG  CD  CE  NZ  C   O
+[NH3+]CCCCC([NH!H])C([O-])=O		LYS 0 C NZ  CE  CD  CG  CB  CA  N   C   OXT O
+[NH3+]CCCCC([NH!H])C(O)=O		LYS 0 O NZ  CE  CD  CG  CB  CA  N   C   OXT O
+[NH3+]CCCCC([NH3+])C(O)=O		LYS 0 A NZ  CE  CD  CG  CB  CA  N   C   OXT O
+NC(CCCC[NH3+])C([O-])=O			LYS 0 B N   CA  CB  CG  CD  CE  NZ  C   OXT O
+NC(CCCC[NH3+])C(O)=O			LYS 0 U N   CA  CB  CG  CD  CE  NZ  C   OXT O
+[NH3+]CCCCC([NH3+])C([O-])=O		LYS 0 Z NZ  CE  CD  CG  CB  CA  N   C   OXT O
+
+# Lysine, neutral side chain
+NCCCCC([NH!H])[C!H]=O			LYS X 0 NZ  CE  CD  CG  CB  CA  N   C   O
+NCCCCC([NH3+])[C!H]=O			LYS X N NZ  CE  CD  CG  CB  CA  N   C   O
+NCCCCC(N)[C!H]=O			LYS X T NZ  CE  CD  CG  CB  CA  N   C   O
+NCCCCC([NH!H])C([O-])=O			LYS X C NZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCC([NH!H])C(O)=O			LYS X O NZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCC([NH3+])C(O)=O			LYS X A NZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCC(N)C([O-])=O			LYS X B NZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCC(N)C(O)=O				LYS X U NZ  CE  CD  CG  CB  CA  N   C   OXT O
+NCCCCC([NH3+])C([O-])=O			LYS X Z NZ  CE  CD  CG  CB  CA  N   C   OXT O
+
+# Lysine, subsituted
+O=[C!H]C(CCCC[NH!H])[NH!H]              LYS S 0 O   C   CA  CB  CG  CD  CE   NZ   N
+
+# Lysine, subsituted, C-terminal amide
+NC(=O)C(CCCC[NH!H])[NH!H]               LYS S 0 NXT CA  O   CA  CB  CG  CD  CE  NZ N
+
+# Methionine
+CSCCC([NH!H])[C!H]=O			MET 0 0 CE  SD  CG  CB  CA  N   C   O
+CSCCC([NH3+])[C!H]=O			MET 0 N CE  SD  CG  CB  CA  N   C   O
+CSCCC(N)[C!H]=O				MET 0 T CE  SD  CG  CB  CA  N   C   O
+CSCCC([NH!H])C([O-])=O			MET 0 C CE  SD  CG  CB  CA  N   C   OXT O
+CSCCC([NH!H])C(O)=O			MET 0 O CE  SD  CG  CB  CA  N   C   OXT O
+CSCCC([NH3+])C(O)=O			MET 0 A CE  SD  CG  CB  CA  N   C   OXT O
+CSCCC(N)C([O-])=O			MET 0 B CE  SD  CG  CB  CA  N   C   OXT O
+CSCCC(N)C(O)=O				MET 0 U CE  SD  CG  CB  CA  N   C   OXT O
+CSCCC([NH3+])C([O-])=O			MET 0 Z CE  SD  CG  CB  CA  N   C   OXT O
+
+# Norleucine
+CCCCC([NH!H])[C!H]=O			NLE 0 0 CE CD  CG  CB  CA  N   C   O
+CCCCC([NH3+])[C!H]=O			NLE 0 N CE CD  CG  CB  CA  N   C   O
+CCCCC(N)[C!H]=O				NLE 0 T CE CD  CG  CB  CA  N   C   O
+CCCCC([NH!H])C([O-])=O			NLE 0 C CE CD  CG  CB  CA  N   C   OXT O
+CCCCC([NH!H])C(O)=O			NLE 0 O CE CD  CG  CB  CA  N   C   OXT O
+CCCCC([NH3+])C(O)=O			NLE 0 A CE CD  CG  CB  CA  N   C   OXT O
+CCCCC(N)C([O-])=O			NLE 0 B CE CD  CG  CB  CA  N   C   OXT O
+CCCCC(N)C(O)=O				NLE 0 U CE CD  CG  CB  CA  N   C   OXT O
+CCCCC([NH3+])C([O-])=O			NLE 0 Z CE CD  CG  CB  CA  N   C   OXT O
+
+# N-phenyl glycine
+O=[C!H]C[N!H]Cc1ccccc1                  NPG P 0 O  C   CA  N   CG  CD  CE1  CZ1  CH  CZ2  CE2  
+
+# Ornithine, protonated side chain
+[NH3+]CCCC([NH!H])[C!H]=O		ORN 0 0 NE  CD  CG  CB  CA  N   C   O
+[NH3+]CCCC([NH3+])[C!H]=O		ORN 0 N NE  CD  CG  CB  CA  N   C   O
+NC(CCC[NH3+])[C!H]=O			ORN 0 T N   CA  CB  CG  CD  NE  C   O
+[NH3+]CCCC([NH!H])C([O-])=O		ORN 0 C NE  CD  CG  CB  CA  N   C   OXT O
+[NH3+]CCCC([NH!H])C(O)=O		ORN 0 O NE  CD  CG  CB  CA  N   C   OXT O
+[NH3+]CCCC([NH3+])C(O)=O		ORN 0 A NE  CD  CG  CB  CA  N   C   OXT O
+NC(CCC[NH3+])C([O-])=O			ORN 0 B N   CA  CB  CG  CD  NE  C   OXT O
+NC(CCC[NH3+])C(O)=O			ORN 0 U N   CA  CB  CG  CD  NE  C   OXT O
+[NH3+]CCCC([NH3+])C([O-])=O		ORN 0 Z NE  CD  CG  CB  CA  N   C   OXT O
+
+# Ornithine, neutral side chain
+NCCCC([NH!H])[C!H]=O			ORN X 0 NZ  CD  CG  CB  CA  N   C   O
+NCCCC([NH3+])[C!H]=O			ORN X N NZ  CD  CG  CB  CA  N   C   O
+NCCCC(N)[C!H]=O				ORN X T NZ  CD  CG  CB  CA  N   C   O
+NCCCC([NH!H])C([O-])=O			ORN X C NZ  CD  CG  CB  CA  N   C   OXT O
+NCCCC([NH!H])C(O)=O			ORN X O NZ  CD  CG  CB  CA  N   C   OXT O
+NCCCC([NH3+])C(O)=O			ORN X A NZ  CD  CG  CB  CA  N   C   OXT O
+NCCCC(N)C([O-])=O			ORN X B NZ  CD  CG  CB  CA  N   C   OXT O
+NCCCC(N)C(O)=O				ORN X U NZ  CD  CG  CB  CA  N   C   OXT O
+NCCCC([NH3+])C([O-])=O			ORN X Z NZ  CD  CG  CB  CA  N   C   OXT O
+
+# Penicilamine (substituted) - Note PDB residue name is 'LEI' but this is not useful
+CC(C)([S!H])C([NH!H])[C!H]=O            PEN  S 0 CG2  CB  CG3  SG1  CA   N    C    O    
+
+# Phenylalanine
+O=[C!H]C(Cc1ccccc1)[NH!H]		PHE 0 0 O   C   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 N
+[NH3+]C(Cc1ccccc1)[C!H]=O		PHE 0 N N   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 C   O
+NC(Cc1ccccc1)[C!H]=O			PHE 0 T N   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 C   O
+[O-]C(=O)C(Cc1ccccc1)[NH!H]		PHE 0 C OXT C   O   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 N
+OC(=O)C(Cc1ccccc1)[NH!H]		PHE 0 O OXT C   O   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 N
+[NH3+]C(Cc1ccccc1)C(O)=O		PHE 0 A N   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 C   OXT O
+NC(Cc1ccccc1)C([O-])=O			PHE 0 B N   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 C   OXT O
+NC(Cc1ccccc1)C(O)=O			PHE 0 U N   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 C   OXT O
+[NH3+]C(Cc1ccccc1)C([O-])=O		PHE 0 Z N   CA  CB  CG  CD1 CE1 CZ  CE2 CD2 C   OXT O
+
+# Proline
+O=[C!H]C1CCC[N!H]1			PRO 0 0 O   C   CA  CB  CG  CD  N
+O=[C!H]C1CCC[NH2+]1			PRO 0 N O   C   CA  CB  CG  CD  N
+O=[C!H]C1CCCN1				PRO 0 T O   C   CA  CB  CG  CD  N
+[O-]C(=O)C1CCC[N!H]1			PRO 0 C OXT C   O   CA  CB  CG  CD  N
+OC(=O)C1CCC[N!H]1			PRO 0 O OXT C   O   CA  CB  CG  CD  N
+OC(=O)C1CCC[NH2+]1			PRO 0 A OXT C   O   CA  CB  CG  CD  N
+[O-]C(=O)C1CCCN1			PRO 0 B OXT C   O   CA  CB  CG  CD  N
+OC(=O)C1CCCN1				PRO 0 U OXT C   O   CA  CB  CG  CD  N
+[O-]C(=O)C1CCC[NH2+]1			PRO 0 Z OXT C   O   CA  CB  CG  CD  N
+
+# Serine
+OCC([NH!H])[C!H]=O			SER 0 0 OG  CB  CA  N   C   O
+[NH3+]C(CO)[C!H]=O			SER 0 N N   CA  CB  OG  C   O
+NC(CO)[C!H]=O				SER 0 T N   CA  CB  OG  C   O
+OCC([NH!H])C([O-])=O			SER 0 C OG  CB  CA  N   C   OXT O
+OCC([NH!H])C(O)=O			SER 0 O OG  CB  CA  N   C   OXT O
+[NH3+]C(CO)C(O)=O			SER 0 A N   CA  CB  OG  C   OXT O
+NC(CO)C([O-])=O				SER 0 B N   CA  CB  OG  C   OXT O
+NC(CO)C(O)=O				SER 0 U N   CA  CB  OG  C   OXT O
+[NH3+]C(CO)C([O-])=O			SER 0 Z N   CA  CB  OG  C   OXT O
+O=[C!H]C(C[O!H])[NH!H]                  SER 0 S O    C  CA  CB  OG  N   
+
+
+# Threonine
+CC(O)C([NH!H])[C!H]=O			THR 0 0 CG2 CB  OG1 CA  N   C   O
+CC(O)C([NH3+])[C!H]=O			THR 0 N CG2 CB  OG1 CA  N   C   O
+CC(O)C(N)[C!H]=O			THR 0 T CG2 CB  OG1 CA  N   C   O
+CC(O)C([NH!H])C([O-])=O			THR 0 C CG2 CB  OG1 CA  N   C   OXT O
+CC(O)C([NH!H])C(O)=O			THR 0 O CG2 CB  OG1 CA  N   C   OXT O
+CC(O)C([NH3+])C(O)=O			THR 0 A CG2 CB  OG1 CA  N   C   OXT O
+CC(O)C(N)C([O-])=O			THR 0 B CG2 CB  OG1 CA  N   C   OXT O
+CC(O)C(N)C(O)=O				THR 0 U CG2 CB  OG1 CA  N   C   OXT O
+CC(O)C([NH3+])C([O-])=O			THR 0 Z CG2 CB  OG1 CA  N   C   OXT O
+
+# Tryptophan
+O=[C!H]C(CC1=CNc2ccccc12)[NH!H]		TRP 0 0 O   C   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 N
+[NH3+]C(CC1=CNc2ccccc12)[C!H]=O		TRP 0 N N   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 C   O
+NC(CC1=CNc2ccccc12)[C!H]=O		TRP 0 T N   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 C   O
+[O-]C(=O)C(CC1=CNc2ccccc12)[NH!H]	TRP 0 C OXT C   O   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 N
+OC(=O)C(CC1=CNc2ccccc12)[NH!H]		TRP 0 O OXT C   O   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 N
+[NH3+]C(CC1=CNc2ccccc12)C(O)=O		TRP 0 A N   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 C   OXT O
+NC(CC1=CNc2ccccc12)C([O-])=O		TRP 0 B N   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 C   OXT O
+NC(CC1=CNc2ccccc12)C(O)=O		TRP 0 U N   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 C   OXT O
+[NH3+]C(CC1=CNc2ccccc12)C([O-])=O	TRP 0 Z N   CA  CB  CG  CD1 NE1 CE2 CZ2 CH2 CZ3 CE3 CD2 C   OXT O
+
+# Tyrosine
+Oc1ccc(CC([NH!H])[C!H]=O)cc1		TYR 0 0 OH  CZ  CE2 CD2 CG  CB  CA  N   C   O   CD1 CE1
+[NH3+]C(Cc1ccc(O)cc1)[C!H]=O		TYR 0 N N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   O
+NC(Cc1ccc(O)cc1)[C!H]=O			TYR 0 T N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   O
+Oc1ccc(CC([NH!H])C([O-])=O)cc1		TYR 0 C OH  CZ  CE2 CD2 CG  CB  CA  N   C   OXT O   CD1 CE1
+OC(=O)C(Cc1ccc(O)cc1)[NH!H]		TYR 0 O OXT C   O   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 N
+[NH3+]C(Cc1ccc(O)cc1)C(O)=O		TYR 0 A N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   OXT O
+NC(Cc1ccc(O)cc1)C([O-])=O		TYR 0 B N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   OXT O
+NC(Cc1ccc(O)cc1)C(O)=O			TYR 0 U N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   OXT O
+[NH3+]C(Cc1ccc(O)cc1)C([O-])=O		TYR 0 Z N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   OXT O
+
+# Valine
+CC(C)C([NH!H])[C!H]=O			VAL 0 0 CG2 CB  CG1 CA  N   C   O
+CC(C)C([NH3+])[C!H]=O			VAL 0 N CG2 CB  CG1 CA  N   C   O
+CC(C)C(N)[C!H]=O			VAL 0 T CG2 CB  CG1 CA  N   C   O
+CC(C)C([NH!H])C([O-])=O			VAL 0 C CG2 CB  CG1 CA  N   C   OXT O
+CC(C)C([NH!H])C(O)=O			VAL 0 O CG2 CB  CG1 CA  N   C   OXT O
+CC(C)C([NH3+])C(O)=O			VAL 0 A CG2 CB  CG1 CA  N   C   OXT O
+CC(C)C(N)C([O-])=O			VAL 0 B CG2 CB  CG1 CA  N   C   OXT O
+CC(C)C(N)C(O)=O				VAL 0 U CG2 CB  CG1 CA  N   C   OXT O
+CC(C)C([NH3+])C([O-])=O			VAL 0 Z CG2 CB  CG1 CA  N   C   OXT O
+
+
+#
+# N-methyl amino acids
+#
+
+# N-methyl alanine
+CC([N!H]C)[C!H]=O                       MAL 0 0 CB   CA   N   CN   C   O
+
+# Sarcosine (N-methyl glycine)
+C[N!H]C[C!H]=O                          SAR 0 0 CN  N   CA   C   O
+
+# N-methyl Aminobutyric acid
+CCC([N!H]C)[C!H]=O                      MAB 0 0 CG CB  CA  N  CN   C   O
+
+# N-methyl Norleucine
+CCCCC([N!H]C)[C!H]=O                    MNL 0 0 CE CD CG CB  CA  N  CN   C   O
+
+# N-methyl Norvaline
+CCCC([N!H]C)[C!H]=O                     MNV 0 0 CD CG CB  CA  N  CN   C   O
+
+# N-methyl leucine
+CC(C)CC([N!H]C)[C!H]=O			MLE 0 0 CD2 CG  CD1 CB  CA  N  CN  C   O
+
+# N-methyl valine
+CC(C)C([N!H]C)[C!H]=O			MVA 0 0 CG2 CB  CG1 CA  N   CN  C  O
+
+# N-methyl tyrosine
+#Oc1ccc(CC([N!H]C)[C!H]=O)cc1           MTY 0 0 OH  CZ  CE2 CD2 CG  CB  CA  N   CN  C   O   CD1 CE1
+C[N!H]C(Cc1ccc(O)cc1)[C!H]=O            MTY 0 0 CN  N   CA  CB  CG  CD1 CE1 CZ  OH  CE2 CD2 C   O 
+
+# N-methyl dehydroalanine
+C=C([N!H]C)[C!H]=O                      DAM 0 0   CB   CA    N   CM    C    O 
+
+# N-ethyl glycine
+CC[N!H]C[C!H]=O                         ELG 0 0   CN2  CN1   N   CA    C    0
+
+#
+# More unusual amino acids
+#
+
+# Click product of propargyl glycine and azidolysine (2 residues)
+O=[C!H]C(C[C!H]=[CH!H])[NH!H]		CPG 0 0 O   C   CA  CB  CG  CD   N 
+O=[C!H]C(CCCC[N!H]N=[N!H])[NH!H]	CAZ 0 0 O   C   CA  CB  CG  CD   CE  NZ  NH  NT  N
+
+# Beta-alanine
+O=[C!H]CC[NH!H]                         BAL 0 0   C    O    CA   CB  NH
+
+# Aminobutanoic acid
+O=[C!H]CCC[NH!H]                        ABU 0 0   C    O    CA   CB  CG   NH
+
+# BMT from cyclosporin
+CC=CCC(C)C(O)C([N!H]C)[C!H]=O           BMT 0 0   CH   CZ  CE  CD2  CG2  CD1   CB  OG1   CA    N   CN    C    O 
+
+# PMT from voclosporin
+#C=CC=CCC(C)C(O)C([N!H]C)[C!H]=O        PMT 0 0   CT   CH   CZ   CE  CD2  CG2  CD1   CB  OG1   CA    N   CN    C    O
+CC(CC=CC=C)C(O)C([N!H]C)[C!H]=O         PMT 0 0   CD1  CG2  CD2  CE  CZ   CH   CT    CB  OG1   CA    N   CN    C    O 
+#(CC=CC=C)C(C)C(O)C([N!H]C)[C!H]=O      PMT 0 0   CT   CH   CZ   CE  CD2  CG2  CD1   CB  OG1   CA    N   CN    C    O
+
+
+#
+# XNA
+#
+
+NC1=NC(=O)N(C=C1)C2CC([O!H])C(CO)O2                               DC 0 0   N4   C4   N3   C2   O2   N1   C6   C5   C1'  C2'  C3'  O3'  C4'  C5'  O5'  O4' 
+Nc1ncnc2N(C=Nc12)C3CC([O!H])C(CO[P!H]([O-])=O)O3                  DA 0 0   N6   C6   N1   C2   N3   C4   N9   C8   N7   C5   C1'  C2'  C3'  O3'  C4'  C5'  O5'  P    OP2 OP1  O4' 
+CC1=CN(C2CC([O!H])C(CO[P!H]([O-])=O)O2)C(=O)NC1=O                 DT 0 0   C7   C5   C6   N1   C1'  C2'  C3'  O3'  C4'  C5'  O5'  P    OP2  OP1  O4'  C2   O2   N3   C4   O4 
+NC1=[NH+]C(=O)C2=C([N-]1)N(C=N2)C3CC([O!H])C(CO[P!H]([O-])=O)O3   DG 0 0   N2   C2   N1   C6   O6   C5   C4   N3   N9   C8   N7   C1'  C2'  C3'  O3'  C4'  C5'  O5'   P  OP2  OP1  O4'
+   
+#############################################################################################
+# HETEROATOM-TYPE RESIDUES: SOLVENT, COUNTER-IONS, PROSTHETIC GROUPS, BOUND COMPOUNDS, ETC. #
+#############################################################################################
+
+# Water
+O					HOH * * O
+
+# Chloroform (PDB name MCH)
+ ClC(Cl)Cl                             MCH  0 0 Cl2  C1   Cl4  Cl3  
+
+
+# Sodium
+[Na+]					SOD * * Na
+
+# Chloride
+[Cl-]					CHL * * Cl
+
+# Acetyl cap
+C[C!H]=O				ACE * * CA  C   O
+
+# Ethoxy
+CC[O!H]                                 ETH  * * O C1 C2
+
+# Trifluoroacetate
+FC(F)(F)[C!H]=O                         TFA * * F1  CA  F2  F3  C  O

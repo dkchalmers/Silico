@@ -1,0 +1,143 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_split_segid
+#? Split a molecule file into separate molecules based on SEGID.
+#  Molecules are written out to a single file.
+#  Molecules with no defined SEGID are assigned to the SEGID 'NONE'.
+#SF
+#. Created: DKC 2002
+#. $Revision: 1.22.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $obase;
+my $oformat;
+my $starttime = (times)[0];
+use vars qw($debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_split_segid", '$Revision: 1.22.2.1.2.2 $');
+
+@arguments = get_arguments2('>=1');
+set_default_oappend('split');
+
+foreach $arg (@arguments) {
+	
+	my $mol;
+	my $molcount;
+	my $mols;
+	my $newmols;
+	
+	print "File: $arg\n" if (!quiet());
+	
+	$mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+ 	($obase, $oformat) = get_ofilename2($mols);
+	
+	$molcount = -1;
+	
+	foreach $mol (@$mols) {
+		
+		my $atom;
+		my $mol_atomcount = 0;
+		my $oldsegid = '';
+		
+		foreach $atom (atoms($mol)) {
+		
+			$atom->{SEGID} = 'NONE' if !defined $atom->{SEGID};
+
+			if ($atom->{SEGID} ne $oldsegid) {
+				
+				++$molcount;
+				
+				$mol_atomcount= 0;
+				$oldsegid = $atom->{SEGID};
+				$newmols->[$molcount]{NAME} = $mol->{NAME}."_".$atom->{SEGID};
+			}
+			
+			$newmols->[$molcount]{ATOMS}[$mol_atomcount] = $atom;
+			++$mol_atomcount;
+			++$newmols->[$molcount]{NUMATOMS};
+		}
+		
+	}
+	
+	foreach $mol (@$newmols) {
+		molecule_pack($mol);
+	}
+	
+	$Silico::debug && ensemble_printout($newmols);
+	write_mol_any($newmols, $obase, $oformat);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

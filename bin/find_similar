@@ -1,0 +1,200 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_similar
+#? Identify duplicate or similar compounds in two sets of molecules using Tanimoto or Euclidian comparisons
+#. Useage find_similar file1 file2 file3 ....
+#.
+#. Designed to be used to filter docking results that are ordered from best to worst.
+#. Fragments are generated using the silico fragment routines
+#. Tanimoto coeff = Num common fragments / Num fragments in mol1 + Num fragments in mol2 - Num common fragments
+#. Euclidian coeff = 
+#. Flags:
+#; -s  Scoring method (Tanimoto or Euclidian)
+#; -cut Cutoff value for duplicate compound (default 0.80)
+#; -dup Find duplicates (sets cutoff to 0.999)
+#; -max Max fragment size
+#; -min Min fragment size
+#; -noh Ignore hydrogens in fingerprints (default)
+#; -o<format> Output format
+#. $Revision: 1.21.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @arguments;
+my $arg;
+my $cutoff;
+my $different;
+my $duplicates;
+my $dup;
+my $ens;
+my $filebase;
+my $i;
+my $j;
+my $min;
+my $max;
+my $noh;
+my $mol1;
+my $mol2;
+my $mols;
+my $num_orig;
+my $oformat;
+my $similar;
+my $score;
+my $score_method;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("find_similar", '$Revision: 1.21.2.1.2.1 $');
+
+require silico_fp;
+
+$score_method 	= make_flag('s', 'score-method', 'Similarity scoring method [t(animoto), e(uclidian)]', 1, 'tanimoto');
+$dup		= make_flag('dup', undef,  'Find duplicates');
+$cutoff = 0.80;
+if ($dup) {
+	$cutoff = 0.999;
+}
+$cutoff 	= make_flag('cut', undef,  'Cutoff for similar compound', 1,  $cutoff);
+
+setup_fp_flags();
+
+@arguments = get_arguments2(">=1");
+
+$score_method = substr ($score_method, 0, 1);
+
+@$mols = ();
+
+foreach $arg (@arguments) {
+
+	silico_msg('c', "File: $arg\n");
+
+	$ens = read_mol_any($arg);
+	if (!defined $ens->[0]) {
+		mol_read_error($arg);	
+		next;
+	}
+	
+	@$mols = (@$mols, @$ens);
+}
+
+$filebase = get_filebase($arguments[0]);
+$oformat ||= $mols->[0]{SOURCE_FILE_TYPE} || 'mol2';
+
+$num_orig = $#{$mols}+1;
+
+silico_msg('c', heading("Calculating fragments\n"));
+ensemble_calc_fragments ($mols, $min, $max, $noh);
+silico_msg('c', heading("Comparing molecules\n"));
+
+$i = -1;
+foreach $mol1 (@$mols) {
+
+	++$i;
+		
+	for ($j = $i+1; $j <= $#{$mols}; ++$j) {
+	
+		$mol2 = $mols->[$j];
+
+		if ($score_method eq 'e') {
+			$score = euclidian($mol1->{FRAGMENT_HASH}, $mol2->{FRAGMENT_HASH});
+		} elsif ($score_method eq 't') {
+			$score = tanimoto($mol1->{FRAGMENT_HASH}, $mol2->{FRAGMENT_HASH});
+		} else {
+			silico_msg('d', "Can not use score method '$score_method'\n");
+		}
+
+		$score = sprintf "%5.3f", $score;
+		
+		if ($score > $cutoff) {
+			
+			silico_msg('c', "\"$mol2->{NAME}\" is simlar to \"$mol1->{NAME}\". Score: $score Cutoff: $cutoff\n");
+				
+			$mol2->{SIMILAR} = 1;
+			last;
+		}
+	}
+}
+
+foreach $mol1 (@$mols) {
+
+	if ($mol1->{SIMILAR}) {
+		push @$similar, $mol1;
+	} else {
+		push @$different, $mol1;
+	}
+}
+	
+
+silico_msg('c', "Different file '$filebase\_dif' contains ".($#{$different}+1)." of $num_orig compounds\n");
+silico_msg('c', "Similar file '$filebase\_sim' contains ".($#{$similar}+1)." of $num_orig compounds\n");
+silico_msg('c', "\n");
+
+print "\n";
+write_mol_any($similar,   $filebase.'_sim',   $oformat) if defined $similar->[0];
+print "\n";
+write_mol_any($different, $filebase.'_dif', $oformat) if defined $different->[0];
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

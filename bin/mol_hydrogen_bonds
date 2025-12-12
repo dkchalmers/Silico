@@ -1,0 +1,478 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#<
+#! mol_hydrogen_bonds
+#? Find all hydrogen bonds in a system.  
+#.  Uses the hydrogen bond definition of McDonald and Thornton (J. Mol. Biol. 1994, 238, 777-793)
+#   which specifies maximum distances and angles for A...H-D and A..D.
+#   Note that to increase the H-bond distance, you must increase both the A..H-D and A..D distances.
+#.  Output molecule file contains structures with hydrogen bonds are denoted using 0-order bonds.  These can be visualised in Maestro or Pymol (etc).
+#.  The default output filename is derived from the first file.  This can be changed using the -O flag.
+#.
+#. Output file lists the following information
+#;  Energy Energy value derived from input file
+#;  Backbone-backbone H-bonds (between NH and C=O)
+#;  3-10 Peptide backbone H-bonds in 3-10 helix
+#;  alpha Peptide backbone H-bonds in alpha helix
+#;  NumDon Total number of H-bond donors
+#;  NumAcc Total number of H-bond acceptors
+#;  NDon  Number of nitrogen H-bond donors
+#;  ODon  Number of oxygen H-bond donors
+#;  NAcc Number of nitrogen H-bond acceptors
+#;  OAcc  Number of oxygen H-bond acceptors
+#;  UnsatDon  Number of unsatisfied H-bond donors (zero hydrogen bonds to this atom)
+#;  UnsatDon  Number of unsatisfied H-bond acceptors (zero hydrogen bonds to this atom)
+#;  NumChgs  Number of formally charged atoms (carboxylate counts as 1,etc)
+#;  ChgReinf1  Number of charge reinforced H-bonds with either donor or acceptor charged (delocalisation on carboxylate groups and guanidines is considered).
+#;  ChgReinf2  Number of charge reinforced H-bonds with both donor and acceptor charged (delocalisation on carboxylate groups and guanidines is considered).
+
+#F
+#. Hydrogen bond parameters
+#; -d_<val> Maximum Donor-Acceptor distance (default 3.9 Ang)
+#; -h_<val> Maximum Hydrogen-Acceptor distance (default 2.5 Ang)
+#; -a_<val> Minimum Donor-Hydrogen-Acceptor angle (default 90 deg)
+#; -b_<val> Minimum Hydrogen-Acceptor-Substituent angle (default 90 deg)
+#. Timestep parameters
+#; -ts_<val> Timestep between files (ps)
+#; -i_<val> Time at first file (ps)
+#. Atom/molecule selection options
+#; -wat Include water molecules
+#. Input file options
+#; -copy  Copy data from first molecule to subsequent molecule.  This is good for MD trajectories
+#. Output file options
+#; -nhb    Do not create 0-order bonds for all hydrogen bonds
+#   and series of PDB files
+#SF
+#. Created: BPR 2005
+#. $Revision: 1.30.2.1.2.15 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $ensemble_hb_count;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_hydrogen_bonds", '$Revision: 1.30.2.1.2.15 $');
+
+# H-bond parameters
+make_flag('d', undef, "Maximum D-A distance", 1, undef, undef, "decimal > 0");
+make_flag('h', undef, "Maximum H-A distance", 1, undef, undef, "decimal > 0");
+make_flag('a', undef, "Minimum D-H-A angle",  1, undef, undef, "decimal > 0");
+make_flag('b', undef, "Minimum H-A-R angle",  1, undef, undef, "decimal > 0");
+
+# Timestep parameters
+make_flag('ts', undef, "Timestep", 1, undef, undef, "decimal > 0");
+make_flag('i', undef, "Initial time", 1, 0, undef, "decimal");
+
+# Atom selection options
+make_flag('wat', undef, "Include water molecules");
+
+# Input file options
+my $copy = make_flag('copy', undef, 'Copy data from first molecule to subsequent molecule (good for MD trajectories)');
+
+# Output file options
+my $nomakebonds = make_flag('nhb', 'no-h-bonds', 'Do not create 0-order bonds for hydrogen bonds');
+
+my @arguments = get_arguments2('>=1');
+
+my $outfile = get_sflag('O') || (get_filebase($arguments[0])."_hb.out");
+
+my $filecount = 0;
+
+foreach my $arg (@arguments) {
+
+	my $fr_in;
+	my $fr_out1;
+	my $fr_out2;
+	my $maxen = get_sflag('maxen');
+	
+	silico_msg('c', "\nFile: $arg\n");
+	my $filebase = get_filebase($arg);	
+	
+	my $firstmol;
+	my $init_energy = 0;
+	my $molcount = 0; 
+	
+	while (my $mol = read_mol_single($fr_in, $arg, "QUIET")) {
+	
+		my $has_h = mol_has_h($mol);
+		
+		$mol->{SDF_DATA} ||= {};
+	
+		print "\n" if $has_h < 2;
+		silico_msg('w', "Molecule does not have hydrogens\n\n") if $has_h <= 0;
+		silico_msg('c', "Molecule has only polar hydrogens\n\n") if $has_h == 1;
+		
+		++$molcount;
+		my $sd = $mol->{SDF_DATA};
+		
+		# Copy bonding and other data from first structure to subsequent ones
+		# otherwise check and fix connectivity etc
+		if ($copy && $molcount > 1) {
+
+			copy_atom_data($firstmol, $mol);
+
+		} else {
+	
+			$firstmol = $mol;
+			
+			molecule_check_and_fix_connectivity($mol);
+			
+			# Calculate formal charges
+			molecule_formal_charge($mol);
+			
+			# Find functional groups
+			mol_label_functional_group($mol) if !$mol->{FG};
+			
+			# Make carboxylate formal charges 0.5 on each oxygen
+			# Other delocalised charged groups (guanidines, sulfates) are currently ignored
+			foreach my $atom (atoms($mol)) {
+				$atom->{FORMAL_CHARGE_DELOCALISED} = -0.5 if $atom->{FG}{CARBOXYLATE_O};
+				$atom->{FORMAL_CHARGE_DELOCALISED} = +0.333 if $atom->{FG}{GUANIDINIUM_N};
+			}
+			
+			# Identify waters
+			label_waters($mol);
+			
+			# Identify H-bond donors and acceptors
+			mol_find_donors_acceptors($mol);
+			
+			label_aa_backbone($mol);
+		} 
+	
+		# Time
+		$sd->{TIME} = (get_sflag('ts')||0)*$molcount + (get_sflag('i') || 0);
+		
+		# Molecule energies
+		$mol->{ENERGY} ||= 0;
+		$init_energy = $mol->{ENERGY} if $molcount == 1;
+		$sd->{RELATIVE_ENERGY} = $mol->{ENERGY} - $init_energy;
+
+		last if $maxen and $sd->{RELATIVE_ENERGY} > $maxen;
+
+		classify_hbonds($mol);
+
+		if (!$nomakebonds) {
+		
+			# Create 0-order bonds for all H-bonds
+			foreach my $hbond (@{$mol->{HBLIST}}) {
+			
+				bond_create_atom($mol, $hbond->[2], $hbond->[4], 0)
+			}
+		}
+		
+		# Write out the resulting molecule 
+		write_mol_single($fr_out1, $mol, undef, undef, "hb", 'NOSORT');
+		
+		write_hb_summary_file($mol, $filebase);
+	}
+}
+
+
+close OUTFILE;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+
+sub classify_hbonds {
+
+	my $mol = $_[0];
+
+	my $sd = $mol->{SDF_DATA};
+
+	# Find hydrogen bonds
+	# Each member of hblist contains dmol, datom, hydrogen, amol, aatom
+	
+	my $hblist = find_intramolecular_hbonds_h( $mol, get_sflag('d'), get_sflag('h'), get_sflag('a'), get_sflag('b'));
+	
+	$mol->{HBLIST} = $hblist;
+
+	# Total hydrogen bonds
+	$sd->{HB_count} = $#{$hblist} + 1;
+
+	my $unsat_donor = 0;
+	my $unsat_acceptor = 0;
+	my $numacc = 0;
+	my $numdon = 0;
+	my $nacc = 0;
+	my $oacc = 0;
+	my $ndon = 0;
+	my $odon = 0;
+	
+	my $formal_charges = 0;
+	my $reinforced2 = 0;
+	my $reinforced1 = 0;
+
+	foreach my $atom (atoms($mol)) {
+
+		++$numdon if $atom->{HBDONOR};
+		++$numacc if $atom->{HBACCEPTOR};
+		++$ndon if $atom->{HBDONOR} && $atom->{ELEMENT} eq "N";
+		++$odon if $atom->{HBDONOR} && $atom->{ELEMENT} eq "O";
+		++$nacc if $atom->{HBACCEPTOR} && $atom->{ELEMENT} eq "N";
+		++$oacc if $atom->{HBACCEPTOR} && $atom->{ELEMENT} eq "O";
+		++$unsat_donor if ($atom->{HBDONOR} && !$atom->{HBONDS});
+		++$unsat_acceptor if ($atom->{HBACCEPTOR} && !$atom->{HBONDS});
+		++$formal_charges if $atom->{FORMAL_CHARGE} && $atom->{FORMAL_CHARGE} != 0;
+	}
+
+	$sd->{HB_unsat_donor} = $unsat_donor;
+	$sd->{HB_unsat_acceptor} = $unsat_acceptor;
+	$sd->{HB_donor_N} = $ndon;
+	$sd->{HB_donor_O} = $odon;
+	$sd->{HB_acceptor_N} = $nacc;
+	$sd->{HB_acceptor_O} = $oacc;
+	$sd->{HB_numdon} = $numdon;
+	$sd->{HB_formal_charges} =$formal_charges;
+	
+	
+	# Find charge reinforced Hbonds
+	foreach my $hbond (@$hblist) {
+		
+		# Check formal charges and delocalised charges
+		my $a = $hbond->[1]{FORMAL_CHARGE} || $hbond->[1]{FORMAL_CHARGE_DELOCALISED} || 0;
+		my $b = $hbond->[4]{FORMAL_CHARGE} || $hbond->[4]{FORMAL_CHARGE_DELOCALISED} || 0;
+		#print "a $a b $b\n";
+			
+		# Single charged member of hbond
+		if ($a xor $b) {
+			
+			++$reinforced1;
+		}
+		
+		# Pair of atoms of opposite sign
+		if (($a and $b) and ($a * $b < 0)) {
+		
+			++$reinforced2;
+		}
+	}
+	
+	$sd->{HB_reinforced1} = $reinforced1;
+	$sd->{HB_reinforced2} = $reinforced2;
+	
+	# See if hydrogen bonds are between backbone =O and NH's 
+	# and 3 or 4 residues apart (ie are helical) using residue number
+	# Also count number of hydrogen bonds to backbone
+		
+	# Count backbone and helical hbonds
+	my $h3 = 0;  # Count of 3-10 H-bonds
+	my $h4 = 0;  # Count of alpha helix H-bonds
+	foreach my $hbond (@$hblist) {
+	
+		# Skip if we are not backbone
+		next if !$hbond->[1]{FG}{AA_N}; # Donor atom (NH)
+		next if !$hbond->[4]{FG}{AA_O}; # Acceptor atom (O)
+	
+		my $resnum1 = $hbond->[1]{SUBID};
+		my $resnum2 = $hbond->[4]{SUBID};
+		
+		my $diff = $resnum1 - $resnum2;
+		
+		++$sd->{HB_backbone};
+		
+		next if $diff < 3 || $diff > 4;
+		++$h3 if $diff == 3;
+		++$h4 if $diff == 4;
+	}
+		
+	$sd->{"HB_3-10"} = $h3;
+	$sd->{HB_alpha} = $h4;
+	
+	$sd->{HB_backbone} = 0;
+	foreach my $hbond (@$hblist) {
+	
+		# Skip if we are not backbone
+		next if !$hbond->[1]{FG}{AA_N}; # Donor atom (NH)
+		next if !$hbond->[4]{FG}{AA_O}; # Acceptor atom (O)
+		
+		++$sd->{HB_backbone};
+	}
+	
+	#molecule_printout($sd);
+	
+	return $hblist;
+}
+
+sub write_hb_summary_file {
+
+	my $mol = $_[0];
+	my $filebase = $_[1] || croak();
+	
+	my $outfile = "$filebase\_hb.txt";
+	
+	++$Silico::hb_molcount;
+
+	if ($Silico::hb_molcount == 1) {
+
+		silico_msg ('n', "Writing output file $outfile\n");
+		open (OUTFILE, ">$outfile") || file_write_error($outfile, 1);
+
+		write_hb_summary_file_header();
+	}
+
+	write_hb_summary_file_body($mol);
+}
+
+sub write_hb_summary_file_header {
+
+	my $timestep = get_sflag('ts');
+	my $init = get_sflag('i');
+	my $dcutoff = get_sflag('d');
+	my $hcutoff = get_sflag('h');
+	my $dha_cutoff = get_sflag('a');
+	my $har_cutoff = get_sflag('b');
+		
+	print OUTFILE "# mol_hydrogen_bonds\n";
+	print OUTFILE "# ".`date`;
+	print OUTFILE "# Number of files: ".($#arguments + 1)."\n";
+	print OUTFILE "# Time at first file: $init\n" if defined $init;
+	print OUTFILE "# Timestep: $timestep\n" if defined $timestep;
+	print OUTFILE "# Maximum Donor-Acceptor distance: ";
+	if (defined $dcutoff) {
+		print OUTFILE "$dcutoff\n";
+	} else {
+		print OUTFILE "3.9 Ang (default)\n";
+	}
+	print OUTFILE "# Maximum Hydrogen-Acceptor distance: ";
+	if (defined $hcutoff) {
+		print OUTFILE "$hcutoff\n";
+	} else {
+		print OUTFILE "2.5 Ang (default)\n";
+	}
+	print OUTFILE "# Minimum Donor-Hydrogen-Acceptor angle: ";
+	if (defined $dha_cutoff) {
+		print OUTFILE "$dha_cutoff"."deg\n";
+	} else {
+		print OUTFILE "90 deg (default)\n";
+	}
+	print OUTFILE "# Minimum Hydrogen-Acceptor-Substituent angle: ";
+	if (defined $har_cutoff) {
+		print OUTFILE "$har_cutoff"."deg\n";
+	} else {
+		print OUTFILE "90 deg (default)\n";
+	}
+	if (get_sflag('wat')) {
+		print OUTFILE "# Including water molecules\n";
+	} else {
+		print OUTFILE "# Ignoring water molecules\n";
+	}
+
+	print OUTFILE "#\n";
+
+	printf OUTFILE "%-6s %-15s %-15s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s %10s\n",
+	  qw(Num Name File Time Energy RelEnergy NumHbonds Backbone 3-10 Alpha NumDon NumAcc NDon ODon NAcc OAcc UnsatDon UnsatAcc NumChgs ChgReinf1  ChgReinf2);
+
+}
+
+sub write_hb_summary_file_body {
+
+	my $mol = $_[0];
+
+	my $name = $mol->{NAME};
+	$name ||= 'Mol';
+	$name =~ s/^\s*//;
+	$name =~ s/\s*$//;
+	$name =~ s/\s+/_/g;
+	$name = substr($name, 0, 25) if length($name) > 25;
+		
+	my $file = $mol->{SOURCE_FILE_NAME};
+	$file = substr($file, 0, 25) if length($file) > 25;
+
+	my $sd = $mol->{SDF_DATA};
+	
+	my @f = ($Silico::hb_molcount, $name, $file, $sd->{TIME}, $sd->{ENERGY}, $sd->{RELATIVE_ENERGY}, $sd->{HB_count}, $sd->{HB_backbone}, $sd->{"HB_3-10"}, $sd->{HB_alpha}, 
+		$sd->{HB_numdon}, $sd->{HB_acceptor_N}, $sd->{HB_donor_N}, $sd->{HB_donor_O}, $sd->{HB_acceptor_N}, $sd->{HB_acceptor_O}, $sd->{HB_unsat_donor}, 
+		$sd->{HB_unsat_acceptor}, $sd->{HB_formal_charges}, $sd->{HB_reinforced1}, $sd->{HB_reinforced2});
+		
+	foreach (@f) {
+		$_ ||= -0;
+	}
+	
+	printf OUTFILE "%-6d %-25s %-25s %10.1f %10.2f %10.2f %10d %10d %10d %10d %10d %10d %10d %10d %10d %10d %10d %10d %10d %10d %10d\n", @f;
+		
+}
+
+sub copy_atom_data {
+
+	my $firstmol = $_[0];
+	my $mol = $_[1];
+
+	my $i = 0;
+	foreach my $atom (@{$mol->{ATOMS}}) {
+	
+		my $fatom = $firstmol->{ATOMS}[$i];
+	
+		$atom->{CONNECT} = $fatom->{CONNECT};
+		$atom->{CONNECTED} = $fatom->{CONNECTED};
+		$atom->{BORDERS} = $fatom->{BORDERS};
+		$atom->{W} = 1 if $fatom->{W};
+		$atom->{HBACCEPTOR} = 1 if $fatom->{HBACCEPTOR};
+		$atom->{HBDONOR} = 1 if $fatom->{HBDONOR};
+		$atom->{FG} = $fatom->{FG};
+		++$i;
+	}
+	
+	$mol->{NUMBONDS} = molecule_count_numbonds($mol);
+	delete $mol->{HAS_BAD_BONDS};
+	delete $mol->{HAS_BAD_BONDORDERS};
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

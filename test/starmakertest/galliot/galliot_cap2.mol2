@@ -1,0 +1,44 @@
+#	Name:			GALLIOT_CAP2
+#	Creating user name:	benr
+#	Creation time:		Wed Apr 16 16:23:33 2008
+
+#	Modifying user name:	benr
+#	Modification time:	Wed Apr 16 16:24:29 2008
+
+@<TRIPOS>MOLECULE
+GALLIOT_CAP2
+   13    13     1     0     0
+SMALL
+USER_CHARGES
+
+
+@<TRIPOS>ATOM
+      1 O          -0.3342   -2.4569   -0.4838 O.3       1 CAP1       -0.5325 
+      2 C1         -0.1640   -1.1041   -0.1949 C.ar      1 CAP1        0.0825 
+      3 C2         -1.2740   -0.3510    0.1895 C.ar      1 CAP1       -0.1500 
+      4 C3         -1.1443    1.0129    0.4691 C.ar      1 CAP1       -0.1500 
+      5 C4          0.1087    1.6247    0.3655 C.ar      1 CAP1       -0.1500 
+      6 C5          1.2267    0.8721   -0.0079 C.ar      1 CAP1       -0.1500 
+      7 C6          1.0925   -0.4936   -0.2803 C.ar      1 CAP1       -0.1500 
+      8 Q2          0.3576   -2.8151   -1.0258 H         1 CAP1        0.4500 
+      9 H2         -2.2364   -0.8444    0.2656 H         1 CAP1        0.1500 
+     10 H3         -2.0135    1.5936    0.7652 H         1 CAP1        0.1500 
+     11 H4          0.2135    2.6855    0.5760 H         1 CAP1        0.1500 
+     12 H5          2.2001    1.3493   -0.0850 H         1 CAP1        0.1500 
+     13 H6          1.9673   -1.0729   -0.5532 H         1 CAP1        0.1500 
+@<TRIPOS>BOND
+     1    2    1 1    
+     2    2    3 ar   
+     3    3    4 ar   
+     4    4    5 ar   
+     5    5    6 ar   
+     6    6    7 ar   
+     7    2    7 ar   
+     8    1    8 1    
+     9    3    9 1    
+    10    4   10 1    
+    11    5   11 1    
+    12    6   12 1    
+    13    7   13 1    
+@<TRIPOS>SUBSTRUCTURE
+     1 CAP1        2 

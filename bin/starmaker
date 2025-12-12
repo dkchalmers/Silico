@@ -1,0 +1,904 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! Starmaker - An all-purpose dendrimer builder  
+#? Starmaker is a command-line script that assembles arbitray dendrimers. Monomers are added 
+#  layer-by-layer starting from a core molecule. The dendrimer can be minimised after addition of each monomer layer using the 
+#  external program Macromodel (Schrodinger) 
+#  
+#!3 Main features:
+#. The dendrimer is built layer by layer.  The first residue in the list is named COR.  Subsequent
+#  residues are named GAA, GAB, GAC, etc. Amide bonds in each monomer are recognised and converted 
+#  to a trans geometry. A repulsion potential and random torsional search is used to force monomers
+#  to grow in a extended geometry. 
+#. At the completion of each layer the molecule is minimised using Macromodel 
+#!3 Additional features:
+#. A file 'stop' in the working directory will terminate the program
+#!3 Use:
+#. Use: starmaker5 core.mol2 monomer1.mol2 monomer2.mol2 monomer3.mol2 ... cap.mol2
+#. Each mol2 file should contain the monomer for that generation.
+#  Each monomer needs to have attachment points.  These are hydrogen atoms
+#  named Q1 (point to branch FROM)  or Q2 (point to attach TO).  The first (core) subunit should
+#  contain at least one Q1 hydrogen.  A standard monomer should contain one Q2 hydrogen
+#  and at least one Q1 hydrogen.  A capping group should contain one Q2 hydrogen.
+#. Outputs a mol2 file 'final_dendrimer.mol2' and intermediate states as layer_XX.mol2
+#!3 Flags
+#; -rc Force first residue to be renamed to 'COR'.  
+#; -clash Distance below which two atoms clash
+#; -noh Do not include hydrogens in geometry optimisation (default)
+#; -cut Distance above which the repulsive potential is ignored
+#; -p External minimisation prog (Macromodel)
+#; -iter Maximum number of iterations when optimising geometry (no clashes) 
+#; -conv Number of steps with the same best coordinates before optimisation stops
+#; -min Maximum number of steps 
+#; -wc Write out structure after each monomer to file current.mol2
+#; -wi Write out structure after every optimisation step
+#SF
+#. $Revision: 1.15-89-gc2af617 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $disttime = 0;
+my $layer_overlaps; # Global
+my $layerrescount; # Global
+my $molcount;
+my $parttime = 0;
+my $prevdist = 0;
+my $prevpart = 0;
+my $rescount;
+my $starttime = (times)[0];
+
+use vars qw($debug $Pi);
+
+###################
+# Start of script #
+###################
+
+my $prevtime = $starttime;
+
+silico_setup();
+print_title("starmaker", '$Revision: 1.15-89-gc2af617 $');
+
+my $prog;
+if ($ENV{SCHRODINGER}) {
+	$prog = "Macromodel";
+}
+
+# Structure options
+my $rename_core = make_flag('rc', undef, "Force renaming starting structure as 'COR' with ID 1");
+
+# Monomer conformational searching
+my $clash = make_flag('clash', undef, "Distance below which two atoms clash", 1, 1.5, undef, "decimal > 0");
+            make_flag('noh', undef, "Do not include hydrogens in geometry optimisation", 1, 1);
+my $cut =   make_flag('cut', undef, "Distance above which the distance function is ignored", 1, 25, undef, "decimal > 0");
+            make_flag('iter', undef, "Maximum number of iterations when optimising geometry (no clashes)", 1, 50, undef, "integer > 0");
+            make_flag('citer', undef, "Maximum number of iterations when optimising geometry (with clashes)", 1, 500, undef, "integer > 0");
+
+# Minimisation options
+	    make_flag('p', 'minimisation-prog', "External program for minimisation", 1, $prog);
+            make_flag('min', undef, "Number of minimisation steps", 1, 5000, undef, "integer > 0");
+
+# Debugging
+            make_flag('wc', undef, "Write out structure after each monomer added");
+            make_flag('wi', undef, "Write out all intermediate structures during optimisation");
+
+my @arguments = get_arguments2('>=2');
+
+my $mols;
+@$mols = ();
+foreach my $arg (@arguments) {
+
+	silico_msg('c', "File: $arg\n");
+	my $filebase = get_filebase($arg);
+	my $m = read_mol_any ($arg);
+	foreach (@$m) {
+		molecule_check_and_fix_connectivity($_);
+	}
+	
+	if (!$m->[0]) {
+	
+		silico_msg('d',	"Failed to read molecules from file $arg!\n");
+	}
+	
+	foreach my $mol (@$m) {
+		$mol->{NAME} = $filebase;
+	}
+	
+	@$mols = (@$mols, @$m);
+}
+
+silico_msg('c', "\n",
+		"Setup Details\n",
+		"-------------\n",
+		"\n",
+		"Running on ".`hostname -s`."\n",
+		"Optimisation steps: ".get_sflag('iter')."\n",
+		"Optimisation steps (with clash): ".get_sflag('citer')."\n",
+		"Using cutoff: ".$cut."\n",
+		"Using clash distance: ".$clash."\n");
+silico_msg('c', "Excluding hydrogens from energy calculations\n") if get_sflag('noh');
+silico_msg('c', "Including hydrogens in energy calculations\n") if !get_sflag('noh');
+silico_msg('c', "\n");
+
+my $dendrimer = make_dendrimer($mols, $clash, $cut);
+my $filebase = get_filebase($arguments[0]);
+
+write_mol_any ($dendrimer, $filebase."_dendrimer");
+
+# Print overall timing information
+silico_msg('c', "\n",
+		"* Timings *\n",
+		"User time taken to calculate distance functions: ".calc_human_readable_time($disttime)."\n");
+
+print_timing_message($starttime);
+print_finished_message();
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub make_dendrimer {
+
+	#<
+	#? Base dendrimer construction routine
+	#; Requires: ensemble
+	#; Returns: ensemble containing a single molecule
+	#>
+
+	my $mols = $_[0];
+	my $clash = $_[1];
+	my $cut = $_[2];
+
+	my $den;
+	my $ens;
+
+	# The dendrimer, $den, is the first molecule in the ensemble
+	$den = $mols->[0];
+
+	# Label residues in the Dendrimer $den
+	$molcount = -1;
+	$rescount = label_dendrimer_residues($den);
+
+	# For each molecule in the list (including $den)...
+	MOL: foreach my $mol (@$mols) {
+
+		my @list;
+		my $return;
+		
+		# Increment the molecule counter.
+		++$molcount;
+		
+		# If the molecule counter has only just become 0,
+		# $mol is $den. Because $mol should be the list of 
+		# molecules to attach to $den, we don't want to include
+		# $den here, so we skip it.
+		next if $molcount == 0;
+		
+		# Check that the monomer now under consideration has
+		# only one even-numbered join point.
+		# Odd numbers are OK as they are for descendants;
+		# even numbers are for ancestors and there should thus
+		# only be one.
+		molecule_check_join_points($mol);
+
+		# Find rings in the monomer before we make copies of it.
+		# Doing this now saves us some subroutine calls.
+		molecule_find_rings($mol);
+		
+		# Finally, actually add the layer.
+		$den = add_layer($den, $mol, $clash, $cut);
+			
+		# For this layer, print out the new number of atoms
+		silico_msg('c', "Dendrimer has ".($#{$den->{ATOMS}}+1)." atoms\n");
+			
+		# Write out a "before minimisation" Mol2 file
+		@$ens = ($den);
+		$return = write_mol2($ens, "layer_$molcount".".mol2");
+		silico_msg('w', "Failed to write structure layer_$molcount.mol2\n") if (!$return);
+			
+		# Minimise (turned on by default, or explicitly using the -min1 flag)
+		minimise_dendrimer($den, $molcount) if (get_sflag('min'));
+	}
+
+	# Renumber atoms
+	molecule_renumber($den);
+	
+	# Move the molecule to a central location
+	molecule_trans_to_centre($den, 'cell');
+
+	# Add a comment to the molecule
+	write_starmaker_comment($den);
+
+	# Generate the final ensemble (as for writing to a mol2)
+	@$ens = ($den);
+
+	return $ens;
+}
+
+sub add_layer {
+
+	#<
+	#? Add a layer to a dendrimer
+	#;
+	#;
+	#>
+	
+	my $den = $_[0];
+	my $mol = $_[1];
+	my $clash = $_[2];
+	my $cut = $_[3];
+	
+	$layerrescount = 0;
+	$layer_overlaps = 0;
+		
+	for (my $i = 1; $i < 1000; $i += 2) {
+		$den = add_part_of_layer($den, $mol, $i, $clash, $cut);
+	}
+	
+	# Print out overlap count if it is > 0
+	if ($layer_overlaps > 0) {
+		silico_msg('c', "\n",
+				"Layer contains $layer_overlaps overlaps\n");
+	}
+		
+	# Print out timing information
+	print_starmaker_timings();
+	
+	# Update timing information in any case
+	$prevdist = $disttime;
+	$prevpart = $parttime;
+	$prevtime = (times)[0];
+	
+	return $den;
+}
+
+sub add_part_of_layer {
+
+	#<
+	#?
+	#;
+	#;
+	#>
+	
+	my $den = $_[0];
+	my $mol = $_[1];
+	my $i = $_[2];
+	my $clash = $_[3];
+	my $cut = $_[4];
+	
+	my $label;
+	my @list;
+	
+	$label = "Q".($i+1);
+	
+	@list = get_join_list($den, "Q$i");
+	
+	# Don't bother with all this if there are no join points
+	# with the requisite label.
+	return ($den) if (!defined $list[0]);
+	
+	foreach my $j1 (@list) {
+	
+		my $j2;
+		my $overlaps;
+				
+		# exit if a stop file exists
+		if (-e 'stop') {		
+			silico_msg('q', "\n", "Stop file found in working directory. Exiting.\n");
+			exit;
+		}
+		
+		# Place a copy of a monomer forming part of the new layer in the molecule
+		my $newmol = deep_copy($mol);
+				
+		# Get the join list of the new monomer
+		($j2) = get_join_list($newmol, $label);
+		
+		# It is possible that the monomer contains no valid
+		# join points. If this is the case, simply go to the
+		# next j1.
+		next if (!defined $j2);
+
+		# Increment the residue counts
+		++$rescount;
+		++$layerrescount;
+		
+		# Call the subroutine to actually add the monomer
+		silico_msg('c', "\n", "\n", "* Layer: $molcount. Layer residue: $layerrescount *\n", "\n");
+
+		($den, $overlaps) = add_monomer($den, $newmol, $j1, $j2, $rescount, $clash, $cut);
+		
+		# Layer information
+		$layer_overlaps += $overlaps;
+	}
+		
+	return $den;
+}
+
+sub print_starmaker_timings {
+
+	silico_msg('c', "\n",
+			"* Timings *\n",
+			"User time taken to calculate distance functions: ".calc_human_readable_time($disttime - $prevdist)."\n",
+			"User time taken to partition molecules: ".calc_human_readable_time($parttime - $prevpart)."\n",
+			"User time taken to add monomer: ".calc_human_readable_time((times)[0] - $prevtime)."\n",
+			"\n",
+			"Current user time in Starmaker: ".calc_human_readable_time((times)[0] - $starttime)."\n");
+}
+
+sub add_monomer {
+
+	#<
+	#? Adds a single monomer to one of the available connection points on a dendrimer.
+	#; Requires: existing dendrimeric framework (mol1), monomer to add (mol2),
+	#  join point on dendrimer (j1), join point on monomer (j2), residue number
+	#; Returns: new dendrimer with monomer added
+	#>
+
+	my $mol1 = $_[0]; # Original molecule
+	my $mol2 = $_[1]; # Monomer to add
+	my $j1 = $_[2]; # Join point on original molecule
+	my $j2 = $_[3]; # Joint point on monomer to add
+	my $rescount = $_[4]; # Current residue count
+	my $clash = $_[5];
+	my $cut = $_[6];
+	
+	my $distfunc;
+	my $ens;
+	my $list1;
+	my $list2;
+	my $overlaps;
+	my $psubname;
+	my $subname;
+	
+	# Put each atom in the original molecule (except the join point) into a list, list1
+	foreach my $atom1 (atoms($mol1)) {
+	
+		# Skip the join point in any case
+		next if $atom1 == $j1;
+
+		# Skip all hydrogens if the -noh flag is used
+		next if (get_sflag('noh') && $atom1->{ELEMENT} eq 'H');
+	
+		push @$list1, $atom1;
+	}
+	
+	# Put each atom in the monomer to add (except the join point) into another list, list2
+	foreach my $atom2 (atoms($mol2)) {  
+	
+		next if (get_sflag('noh') && $atom2->{ELEMENT} eq 'H');
+		
+		next if $atom2 == $j2;
+		push @$list2, $atom2;	
+	}
+	
+	# Name new monomer by incrementing parent substructure name or starting at GAA
+	$psubname = $j1->{SUBNAME};
+	
+	# If the parent substructure name is a G substructure, increment
+	# This will also get GLN, GLU and GLY amino acids - we need to avoid use of these names
+	if ($psubname =~ /^G../) {
+	
+		$subname = $psubname;
+		++$subname;
+	
+	# If the parent substructure name is not a G substructure, start from GAA
+	} else {
+		$subname = 'GAA';
+	}
+				
+	# For each atom in the new structure, set the residue number and residue name appropriately
+	foreach my $atom (atoms($mol2)) {
+		$atom->{SUBID} = $rescount;
+		$atom->{SUBNAME} = $subname;
+	}
+		
+	# Print a note when each new monomer residue is added - tell the residue details and the molecule being added to
+	silico_msg('c', "Adding residue: $list2->[0]{SUBNAME} $list2->[0]{SUBID} ($mol2->{NAME})\n");
+
+	# Get the parent atoms
+	my $p1 = $mol1->{ATOMS}[$j1->{CONNECT}[0]];
+	my $p2 = $mol2->{ATOMS}[$j2->{CONNECT}[0]];
+	
+	# Pull the bonds from P1 to J1 and from P2 to J2 into alignment with each other
+	align_bonds($mol1, $mol2, $p1, $j1, $p2, $j2);
+
+	# Combine Mol1 and Mol2 into the same molecule without using
+	# deep copy so that atoms do not change identity
+	@$ens = ($mol1, $mol2);
+	$ens = ensemble_consolidate($ens, 1);
+	$mol1 = $ens->[0];
+
+	# Renumber the entire structure
+	molecule_renumber($mol1);
+	
+	my $bo =  $j1->{BORDERS}[0];
+	my $bo2 = $j2->{BORDERS}[0];
+	
+	silico_msg('d', "Bond orders of joined fragments to not match: $bo $bo1\n") if $bo != $bo2;
+	
+	print "\nCreating bond between atom: $p1->{SUBNAME} $p1->{SUBID} $p1->{NAME} and atom: $p2->{SUBNAME} $p2->{SUBID} $p2->{NAME}. bo: $bo\n";
+
+	# Create a bond from P1 to P2
+	bond_create_atom($mol1, $p1, $p2, $bo);
+
+	# Delete the atoms J1 and J2 as they are no longer needed
+	molecule_delete_atom($mol1, $j1->{NUM}-1);
+	molecule_delete_atom($mol1, $j2->{NUM}-1);
+
+	# Perform post-deletion processing on Mol1 (required in Silico)
+	molecule_pack($mol1);
+	
+	# Make amide bonds trans.  We wish to check all atoms in list2 plus the two join points j1 & j2
+	my $alist;
+	@$alist = ($j1, $j2, @$list2);
+	make_amides_trans($mol1, $alist);
+	
+	# Attempt to splay the molecule as far as possible
+	($distfunc, $overlaps) = optimise_geometry($mol1, $list1, $list2, $clash, $cut);
+	
+	if (get_sflag('wc')) {
+		@$ens = ($mol1);
+		write_mol2($ens, "current.mol2");
+	}
+	
+	# This subroutine returns the new structure containing the joined Mol1 and Mol2
+	return $mol1, $overlaps;
+}
+
+sub align_bonds {
+
+	#<
+	#? Align two bonds
+	#. Overlaps p1 and j2, p2 and j1 (approx)
+	#; Requires: mol1, mol2, a1, a2, a3, a4, bond length
+	#; Returns: nothing
+	#>
+	
+	my $mol1 = $_[0]; # static molecule
+	my $mol2 = $_[1]; # molecule to be moved
+	my $p1 = $_[2]; # parent mol1
+	my $j1 = $_[3]; # free valence mol1 (dummy atom to be removed)
+	my $p2 = $_[4]; # parent mol2
+	my $j2 = $_[5]; # Free valence atom to be removed in mol2
+	my $length = $_[6] || 1.5; # New bond length
+
+	# Calculate point distance $length from p1 towards $j1
+	my @origin = bond_vector($p1, $j1);
+	@origin = unit_vector(@origin);
+	@origin = scale_vector($length, @origin);
+	@origin = ($p1->{X}+$origin[0], $p1->{Y}+$origin[1], $p1->{Z}+$origin[2]);
+	
+	# Translate molecule 2 atom p2 to be at position @origin.
+	molecule_translate($mol2, $origin[0]-$p2->{X}, $origin[1]-$p2->{Y}, $origin[2]-$p2->{Z});
+
+	# Calclulate angle between bonds
+	my $angle = two_bond_angle($p1, $j1, $j2, $p2);
+
+	# Calculate a normal to the two bonds
+	my @normal = two_bond_normal($j1, $p1, $j2, $p2);
+		
+	# Rotate around the normal
+	molecule_rotate_axis($mol2, $angle, @normal, @origin);
+}
+
+sub write_starmaker_comment {
+
+	#<
+	#? Write comments that will appear in the output file
+	#; Requires: molecule
+	#; Returns: nothing
+	#>
+	
+	my $mol = $_[0];
+
+	$mol->{COMMENTS}  = "# Dendrimer generated using $0\n";
+	$mol->{COMMENTS} .= "# Date: ";
+	$mol->{COMMENTS} .= `date`;
+	$mol->{COMMENTS} .= "\n";
+}
+
+sub get_join_list {
+
+	#<
+	#? Gets the join list in a single molecule
+	#; Requires: molecule, atom name to look for as a join point
+	#; Returns: Array containing those atoms which are join points
+	#>
+
+	my $mol = $_[0];
+	my $name = $_[1];
+
+	my @list;
+	my $count = 0;
+
+	# Remove whitespace from the "name" argument passed to this subroutine
+	$name =~ s/ //g;
+	
+	# For each atom in the molecule:
+	foreach my $atom (atoms($mol)) {
+
+		# Get the atom's name
+		my $atname = $atom->{NAME};
+		# Remove whitespace from the atom's name
+		$atname =~ s/ //g;
+
+		# Move to the next atom if this name isn't what you're looking for
+		next if $atname ne $name;
+
+		# If this name is what you're looking for, add this atom to the list
+		push @list, $atom;
+		++$count;
+	}
+
+	# Return nothing if there have been no atoms put into the list
+	return undef if $count == 0;
+
+	# Otherwise, return the list
+	return @list;
+}
+
+sub label_dendrimer_residues {
+
+	#<
+	#? Label residues in a molecule according to the Silico
+	#  dendrimer scheme.
+	#  Core COR1, First generation GAA, Second GAB, ...
+	#  A rename of all atoms to COR1 is enforced if the flag
+	#  -rc is used, or if atoms are found that are not COR
+	#  or G**.
+	#; Requires: Molecule
+	#; Returns: Highest residue ID found
+	#>
+	
+	my $mol = $_[0];
+
+	my $maxresnum;
+	my $rescount;
+	
+	my $flag = 0;
+	
+	# Find out if the first molecule is named correctly
+	
+	foreach my $atom (atoms($mol)) {
+
+		if (!($atom->{SUBNAME} eq 'COR' || $atom->{SUBNAME} =~ /G../)) {
+			
+			$flag = 1;
+			last;
+		}
+	}
+
+	# Otherwise rename first molecule to COR
+	if ($flag == 1 || get_sflag('rc')) {
+
+		silico_msg('c', "Renaming first structure to \"COR\"\n");
+
+		foreach my $atom (atoms($mol)) {
+				
+			$atom->{SUBID} = 1;
+			$atom->{SUBNAME} = 'COR';
+		}
+		
+		$rescount = 1;
+		
+	} else {
+
+		# Find the maximum residue number existing in the core
+		$maxresnum = 0;
+		foreach my $atom (atoms($mol)) {
+		
+			$maxresnum = $atom->{SUBID} if $atom->{SUBID} > $maxresnum;
+		}
+		
+		$rescount= $maxresnum;
+	}
+	
+	return $rescount;
+}
+
+sub minimise_dendrimer {
+
+	#<
+	#? Minimise a dendrimer 
+	#; Requires: Molecule, layer number
+	#; Returns: In-situ modification of molecule
+	#>
+
+	my $den = $_[0];
+	#my $addr = \$_[0];
+	my $molcount = $_[1];
+	
+	my $ens;
+	
+	my $prog = get_sflag('p');
+
+	if (!defined $prog) {
+		silico_msg('c', "Not minimising\n");
+
+	} elsif ($prog eq "Macromodel") {
+
+		# Minimise using Macromodel
+		$ens = mmod_min($den, undef, get_sflag('min'));
+		silico_msg('d', "Execution of Macromdel failed!\n") if !defined $den;
+
+	} else {
+		silico_msg('c', "External program not set. Skipping minimisation minimising\n");
+	}
+
+	# Write out an "after minimisation" Mol2 file
+	# Note that this file does not have atoms renumbered
+	write_mol2($ens, "layer_$molcount"."_min.mol2");	
+	
+	#${$addr} = $den;
+}
+
+sub molecule_check_join_points {
+
+	#<
+	#? Check a dendrimer monomer for exactly one join point to
+	#  a putative ancestor.
+	#; Requires: Molecule
+	#; Returns: Nothing
+	#>
+	
+	my $mol = $_[0];
+	
+	my $flag = 0;
+	
+	foreach my $atom (atoms($mol)) {
+	
+		my $num;
+		
+		# Valid monomer-to-ancestor join points are
+		# Q2, Q4, Q6, ...
+		# Therefore, skip any atom that doesn't have
+		# a name of "Q" followed by some numerical string.
+		# Further to that, the string can't start with a 0.
+		next if $atom->{NAME} !~ /^Q[1-9][0-9]*$/;
+		
+		# Obtain the numeric component of the atom's name.
+		# This is done by simply removing the initial Q.
+		$num = $atom->{NAME};
+		$num =~ s/^Q//;
+		
+		# If the numeric component is even (i.e., last bit is not 1)
+		if (($num & 1) == 0) {
+			
+			# If the flag is set, we have run into an even numbered
+			# Q already, so die with an explanatory error.
+			if ($flag) {
+			
+				silico_msg('d', "More than one even numbered join point was found!\n",
+						"Molecule: \"$mol->{NAME}\"\n",
+						"Please check your input .mol2 files.\n");
+			
+			# Otherwise, set the flag.
+			} else {
+				$flag = 1;
+			}
+		}
+	}
+	
+	# If the flag is not set by now, we have found no connection points.
+	# Therefore, die with an explanatory error.
+	if (!$flag) {
+	
+		silico_msg('d', "No connection points found!\n",
+				"Molecule: \"$mol->{NAME}\"\n",
+				"Please check your input .mol2 files.\n");
+	}
+}
+
+sub optimise_geometry {
+
+	#<
+	#? Attempts to find the most splayed geometry. In particular checks for overlap.
+	#; Requires: Molecule, two lists of atoms
+	#; Returns: Best (lowest) distance function value, and the lowest number of overlaps
+	#>
+		
+	my $mol = $_[0];
+	my $list1 = $_[1]; # Original structure (excluding hydrogens by default)
+	my $list2 = $_[2]; # Monomer (excluding hydrogens by default)
+	my $clash = $_[3];
+	my $cut = $_[4];
+
+	my $all;
+	my $ens;
+	my $filecount;
+	my $header = 0;
+	my $hash;
+	my $res_handle = $list2->[0]{SUBID} + 1000;
+
+	if ($#{$list1} < 500) {
+
+		@$all = (@$list1, @$list2);	
+
+	} else {
+
+		foreach my $atom (@$list1, @$list2) {
+
+			next if distance($list2->[0], $atom) > 40;
+
+			push @$all, $atom;
+		}
+
+		silico_msg('c', "Using ".($#{$all}+1)." atoms of ".($#{$list1} + $#{$list2}+2)." in neighbour list\n");
+	}
+
+	# Determine the best distance function and overlaps
+	my $time1 = (times)[0];
+	my ($bdistfunc, $boverlaps) = calc_distance_function($mol, $list2, $all, $clash, $cut);
+	my $time2 = (times)[0];
+	$disttime += ($time2-$time1);
+	
+	# Store current coordinates
+	record_best_coords($mol);
+	
+	# While we haven't run out of iterations and haven't converged, attempt to find a good conformation
+	# by rotating about a bond
+	my $count = 0;
+	my $count2 = 0;
+	ROT: while (1) {
+	
+		my $angle;
+		
+		# Count an attempt to optimise the geometry
+		++$count;
+		
+		# Count number of steps with no overlaps
+		++$count2 if $boverlaps == 0;
+	
+		# Exit when the optimisation runs out of iterations (no clash)
+		if (($count2 >= get_sflag('iter') && $boverlaps == 0) || ($count >= get_sflag('citer'))) {
+			silico_msg('c', "* Optimisation converged after $count iterations *\n");
+			last;
+		}
+	
+		# Pick a rotatable bond between two atoms in the new monomer
+		my ($ratom1, $ratom2) = select_rotate_bond($mol, $list2);
+		
+		if (!defined $ratom1) {
+			silico_msg('n', "Could not identify a rotatable bond in the monomer.\n",
+					"No optimisation was done.\n");
+			last;
+		}
+
+		# Swap orders of atoms if atom1 > atom2.
+		if ($ratom1->{NUM} > $ratom2->{NUM}) {
+
+			($ratom2, $ratom1) = ($ratom1, $ratom2);
+		}
+		
+		# Save atom rotation list for each rotatable bond in a hash
+		my $rlist1;
+		my $rlist2;
+		if (!defined $hash->{"$ratom1->{NUM} $ratom2->{NUM}"}) {
+
+			# Partition on this rotatable bond
+			# if not already calculated
+			$time1 = (times)[0];
+			($rlist1, $rlist2) = mol_partition_on_bond2($mol, $ratom1, $ratom2, $list1->[0]);
+			$time2 = (times)[0];
+			$parttime += ($time2-$time1);
+			$hash->{"$ratom1->{NUM} $ratom2->{NUM}"} = $rlist2;
+
+		} else {
+			
+			# Set rlist to saved rotation list
+			$rlist2 = $hash->{"$ratom1->{NUM} $ratom2->{NUM}"};
+		}
+
+		# Choose a random angle up to 360 degrees
+		$angle = rand(2 * $Pi);
+		
+		# Perform a rotation by this angle
+		rotate_torsion_angle2($mol, $ratom1, $ratom2, $rlist2, $angle);
+
+		# Calculate the distance function between the monomer, and everything (including the monomer)
+		$time1 = (times)[0];
+		my ($distfunc, $overlaps) = calc_distance_function($mol, $list2, $all, $clash, $cut);
+		$time2 = (times)[0];
+		$disttime += ($time2-$time1);
+		
+		# If this new conformation is better than the old one, then accept it
+		if ($overlaps <= $boverlaps && $distfunc < $bdistfunc) {
+						
+			my $string;
+			
+			# Print out a header if this is the first new conformation
+			if ($header == 0) {
+			
+				silico_msg('c', "\n",
+						"Distance Functions\n",
+						"------------------\n",
+						"Iteration    Current Best   Previous Best     Overlaps\n");
+				
+				$header = 1;
+				
+				# Print out energy information when the conformation is changed
+				$string = sprintf "%5d       %10.2f                        %5d\n", 0, $bdistfunc, $boverlaps;
+				silico_msg('c', "$string");
+				$string = sprintf "%5d       %10.2f       %10.2f       %5d\n", $count, $distfunc, $bdistfunc, $overlaps;
+				silico_msg('c', "$string");
+			} else {
+				$string = sprintf "%5d       %10.2f       %10.2f       %5d\n", $count, $distfunc, $bdistfunc, $overlaps;
+				silico_msg('c', "$string");
+			}
+			
+			# Update the atom records with the new conformation
+			record_best_coords($mol);
+			$boverlaps = $overlaps;
+			$bdistfunc = $distfunc;
+			
+			# Write out a Mol2 file if this is asked for by the -write flag
+			if (get_sflag('wi')) {
+				@$ens = ($mol);
+				$filecount = $count + 100000;
+				write_mol2($ens, "$res_handle"."_"."$filecount.mol2")
+			}
+			
+		# If this new conformation is worse than the old one...
+		} else {
+			# ... then go back
+			revert_to_best_coords($mol, $rlist2);
+		}
+	}
+
+	# Return the best (lowest) distance function, and the lowest number of overlaps
+	return ($bdistfunc, $boverlaps);
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

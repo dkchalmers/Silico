@@ -1,0 +1,186 @@
+#!/usr/bin/perl -w
+#!/apps/linux/bin/perl -d:DProf -w
+
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_clash
+#? Find clashing atoms using the find_closest_atoms routine
+#. CLOS segid markers are added for close atoms. These will appear in pdb format output file
+#; -clash Use find_clash routine
+#; -ignh Ignore hydrogens
+#; -fix  Fix clashes by moving distance between atoms to <cutoff>
+#; -u Unbinned - do not use binned atom routines (much slower)
+#SF
+#. Created: DKC 2013
+#. $Revision: 1.5.2.1.2.3 $
+#>
+
+use strict;
+package Silico;
+
+
+#########################
+# Variable declarations #
+#########################
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_geom;
+
+
+my $cutoff = make_flag('c', 'cutoff', "Cutoff for short bons", 1, 0.3, undef, 'DECIMAL >0');
+my $ignh = make_flag('ignh', 'ignore-hydrogens', "Ignore hydrogens in closest atoms");
+my $fix = make_flag('fix', 'fix-clashes', "Fix clashes by moving distance between atoms to <cutoff>");
+my $unbinned =  make_flag('u', 'unbinned', "Use non-binned test routine");
+  		
+print_title("find_clash", '$Revision: 1.5.2.1.2.3 $');
+
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('clash');
+
+my $fh_in;
+my $fh_out;
+foreach my $arg (@arguments) {
+
+	my $mol = read_mol_single($fh_in, $arg);
+	
+	my $list;
+	if ($unbinned) {
+		$list = find_closest_atoms_periodic($mol, $mol, $cutoff+0.05, $ignh);
+	} else {
+		$list = find_closest_atoms_periodic_binned($mol, $mol, $cutoff+0.05, $ignh);
+	}
+	
+	print heading("Distances less than ".($cutoff+0.05)." Angstroms");
+	
+	print_list($mol, $list);
+
+	foreach my $v (@$list) {
+		
+		my $atom1 = $v->[0];
+		my $atom2 = $v->[1];
+
+		$atom1->{SEGID} = "CLOS";
+		$atom2->{SEGID} = "CLOS";
+	}
+
+	# Move atoms if they are too close together
+	if ($fix) {
+	
+		print heading("Modified distances");
+
+		foreach my $v (@$list) {
+
+			my $atom1 = $v->[0];
+			my $atom2 = $v->[1];
+			my $distance = $v->[2];
+
+			my @bv = bond_vector($atom1, $atom2);
+			my @u = unit_vector(@bv);
+			my $l = magnitude(@bv);
+			my $s = ($cutoff-$l)/2;
+
+			if ($s > 0) {
+
+				my $i = 0;
+				foreach ('X', 'Y', 'Z') {
+
+					my $delta = $u[$i]*$s;
+
+					$atom1->{$_} -=$delta;
+					$atom2->{$_} += $delta;
+					++$i;
+				}
+				
+				# Revised distance
+				my $nd = distance($atom1, $atom2);
+				
+				printf "a1: %8d %6s %6s %6s    a2: %8s %6s %6s %6s  d: %6.3f\n", $atom1->{NUM}, $atom1->{NAME}, $atom1->{SUBNAME}, $atom1->{SUBID},
+					$atom2->{NUM}, $atom2->{NAME}, $atom2->{SUBNAME}, $atom2->{SUBID}, $nd;
+			}
+		}
+
+		print heading("Revised structure");
+		if ($unbinned) {
+			$list = find_closest_atoms_periodic($mol, $mol, $cutoff+0.05, $ignh);
+		} else {
+			$list = find_closest_atoms_periodic_binned($mol, $mol, $cutoff+0.05, $ignh);
+		}
+		print_list($mol, $list);
+	}
+
+	write_mol_single($fh_out,$mol);
+
+	print "\n";
+}
+
+
+sub print_list {
+
+	my $mol = $_[0];
+	my $list = $_[1];
+	my $recalc_distance;
+	
+	foreach my $v (@$list) {
+		
+		my $atom1 = $v->[0];
+		my $atom2 = $v->[1];
+		my $distance;
+		
+		if ($recalc_distance) {
+			$distance = sqrt(distance_periodic_sq($atom1, $atom2));
+			$distance = distance($atom1, $atom2);
+		} else {
+			$distance = $v->[2];
+		}
+
+		printf "a1: %8d %6s %6s %6s    a2: %8s %6s %6s %6s  d: %6.3f\n", $atom1->{NUM}, $atom1->{NAME}, $atom1->{SUBNAME}, $atom1->{SUBID},
+			$atom2->{NUM}, $atom2->{NAME}, $atom2->{SUBNAME}, $atom2->{SUBID}, $distance;
+
+	}
+}
+
+
+
+sub silico_setup {
+
+	#<
+#? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

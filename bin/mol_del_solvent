@@ -1,0 +1,149 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! mol_del_solvent
+#? Delete solvent molecules from a file (or alternatively delete nonsolvent molecules)
+#. Writes out _dry file containing unsolvated molecules or _sol file containing solvent
+#F
+#; -n Negate. Write out solvent instead of nonsolvent
+#; -f Force deletion of water and other solvent molecules
+#; -c Combine all input files to a single output file
+#; -q Speed up deletion if all molecules in file are identical
+
+#SF
+#. $Revision: 1.1.2.7 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_del_solvent", '$Revision: 1.1.2.7 $');
+
+my $sol = make_flag('n', undef, 'Write out solvent instead of nonsolvent');
+my $solvent_maxatoms = make_flag('msa', 'max-solvent-atoms', 'Maximum number of atoms in nonwater solvent atoms', 1, 10);
+my $force = make_flag('force', undef, 'Force deletion of both water and other solvent molecules');
+my $combine   = make_flag('c', 'combine', "Combine all input files to a single output file");
+my $quick     = make_flag('q', 'quick',           "Speed up deletion if all molecules in file are identical");
+
+$sol ||= 0;
+
+if ($sol) {
+	set_default_oappend('sol');
+} else {
+	set_default_oappend('dry');
+}
+
+my @arguments = get_arguments2('>=1');
+
+my $fr_out;
+my $molcount = 0;
+my $list;
+
+foreach my $arg (@arguments) {
+	
+	undef $fr_out if !$combine;
+	my $fr_in;
+	
+	while (my $mol = read_mol_single($fr_in, $arg)) {
+		
+		++$molcount;
+		
+		if (!$quick || $molcount == 1) {
+		
+			@$list = ();
+		
+			my $delcount = 0;
+			my $numwat = label_waters($mol, 1);
+		
+			print "Found $numwat water molecules.  Other solvent molecules will not be deleted.  To override this, use the -force flag\n" if $numwat;
+		
+			my $numsol = 0;
+			if (!$numwat || $force) {
+
+				$numsol = label_solvent($mol, $solvent_maxatoms);
+				print "Found $numsol solvent molecules (having fewer than $solvent_maxatoms atoms)\n";
+			}
+		
+			my $j = 0;
+				foreach my $atom (atoms($mol)) {
+		
+				if ($sol xor ($atom->{FG}{W} || $atom->{FG}{SOL})) {
+					push @$list, $j;
+					++$delcount;
+				}
+				++$j;
+			}
+			
+			silico_msg('c', "Deleting $delcount solvent atoms\n") if !$sol;
+			silico_msg('c', "Deleting $delcount non-solvent atoms\n") if $sol;
+		}
+		
+		molecule_delete_atoms($mol, $list);
+		molecule_pack($mol);
+		write_mol_single($fr_out, $mol);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

@@ -1,0 +1,1487 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! water_to_ion
+#? Replace random water molecules (single atom) counter ions.  Defaults to Na ions. Covers
+#  a very large range of inorganic ions.
+#. Note: sorting atoms (the default) can cause problems
+#F
+#; -e_<string>   Ion element (default Na). Now handles a large range of single-atom cations and anions. 
+#; -n_<number>   Number of ions to add
+#; -r_<string>   Residue name of added ions (optional)
+#; -a_<string> 	 Atom name to use for ions (optional)
+#; -amber 	 Add PDB TER record after each ion to produce input for Amber
+#; -sort	 Sort the atom order in the resulting output file
+#; -ra	 	 Renumber atoms
+#; -rr	 	 Renumber residues
+#; -rand	 Replace random water molecules distributed through water molecules in file.  Otherwise the first 'n' waters in the file are selected.
+
+#SF
+#. Created: David K. Chalmers & Benjamin P. Roberts  2000-8
+#. $Revision: 1.42.2.1.2.2 $
+#>
+
+package Silico;
+use strict;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $ion_element;
+my $ion_element_number;
+my $ion_mmff_charge_code;
+my $ion_subname;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+# Set up and print the title
+silico_setup();
+print_title("water_to_ion", '$Revision: 1.42.2.1.2.2 $');
+
+my $ion =	 	make_flag('e', 'ion-to-add', "Ion element", 1, "Na");
+my $number = 		make_flag('n', 'number-of-ions', "Number of ions to add", 1, undef, 1, "integer > 0");
+my $resname = 		make_flag('r', 'residue-name', "Residue name for ions", 1);
+my $ion_atname = 	make_flag('a', 'ion-name', "Atom name for ion", 1);
+  			make_flag('amber', 'amber', "Add TER records between ions to suit Amber");
+my $sort = 		make_flag('sort', 'sort-atoms', "Sort atoms");
+my $renumber_atoms = 	make_flag('ra', 'renumber-atoms', "Renumber atoms");
+my $renumber_res = 	make_flag('rr', 'renumber-residues', "Renumber residues");
+my $replace_random = 	make_flag('rand', 'replace-random-waters', "Replace random waters");
+
+# Read command-line arguments; print out documentation if nothing is there
+@arguments = get_arguments2('>=1');
+
+# Shut up $Silico::debug whinge
+$Silico::debug = $Silico::debug;
+$Silico::PROG = $Silico::PROG;
+
+# Set ion data from the list in get_ion_data
+($ion_element, $ion_element_number, $ion_mmff_charge_code, $ion_subname) = get_ion_data($ion);
+
+if ($resname) {
+	$ion_subname = $resname;
+}
+
+if (!$ion_atname) {
+
+	# By default call ions "EL01" to force them to take all four spaces in a PDB column
+	# This prevents programs from "shifting" them so eg NA becomes N or CL becomes C
+	$ion_atname = $ion."01";
+
+} else {
+	
+	# Use supplied atom name
+	$ion_atname =~ s/ //g;
+}
+
+# Ensure that ion_subname and ion_atname are sane
+if ($ion_subname !~ /^.{3}$/) {
+	$ion_subname = substr($ion_subname."   ", 0, 3); # Truncate space padded residue name
+}
+if ($ion_atname !~ /^.{4}$/) {
+	$ion_atname = substr($ion_atname."    ", 0, 4); # Truncate space padded ion name
+}
+
+silico_msg('c', "\nIon residue name: '$ion_subname'\n");
+silico_msg('c', "Ion atom name: '$ion_atname'\n\n");
+
+# Set the default string to append to output files
+set_default_oappend(lc($ion_element));
+
+
+foreach $arg (@arguments) {
+	
+	my $i;
+	my $mol;
+	my $mols;
+		
+	# Print and set some introductory file information
+	silico_msg('c', "File: $arg\n");
+	
+	# Read in an ensemble
+	$mols = read_mol_any($arg);
+
+	# Skip this file if it doesn't contain a valid ensemble
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	# For each molecule in the ensemble...
+	MOL: for ($i = 0; $i <= $#{$mols}; ++$i) {
+
+		my $atom;
+		my $ioncount;
+		my $maxres;
+		my $mol;
+		my $watercount;
+		my $waters;
+		
+		# Read the molecule data
+		$mol = $mols->[$i];
+		
+		# Create bonds if there are none
+		molecule_check_and_fix_connectivity($mol);
+		
+		# Renumber substructures
+		# This has been added to deal with structures with more than 10000
+		# substructures (usually waters).
+		$maxres = $mol->{ATOMS}[-1]{SUBID}; # Default value
+		
+		$maxres = mol_renumber_substructures($mol) if $renumber_res;
+		
+		# Label waters
+		label_waters($mol);
+		
+		# Count the number of waters:
+		# initialise a water counter
+		$watercount = 0;
+		
+		# For each atom in the molecule...
+		foreach $atom (atoms($mol)) {
+		
+			# If the atom is an oxygen, and is either labelled as a water or has a typical water residue name (TIP, HOH, MOH)...
+			if ($atom->{ELEMENT} eq 'O' && ($atom->{FG}{W} ||
+			($atom->{SUBNAME} =~ /^TIP/ || $atom->{SUBNAME} =~ /^HOH/ || $atom->{SUBNAME} =~ /^MOH/ ||$atom->{SUBNAME} =~ 'WAT'))) {
+				# push it on to a list of water atoms
+				push @$waters, $atom;
+				# and add one to the number of found water molecules
+				++$watercount;
+			}
+
+			# Labels for later sorting
+			if ($atom->{FG}{W}) {
+				$atom->{SORT_LABEL}=3;
+			} else {
+				$atom->{SORT_LABEL}=1;
+			}
+		}
+		
+		# If no waters were found by this method...
+		if ($watercount == 0) {
+			# Print a warning,
+			silico_msg('n', "No replaceable waters were found.\n",
+					"This molecule will be skipped.\n");
+			# and move to the next molecule in the ensemble.
+			next;
+		} else {
+			# Otherwise, print a note that $watercount waters were found.
+			silico_msg('c', "Found $watercount replaceable waters.\n");
+		}
+		
+		# This next bit checks that the ion's residue name - $ion_subname - 
+		# is satisfactory; that is, that it isn't duplicating an already present name.
+		SUB: while (1) {
+			
+			my $flag = 0;
+			my $response;
+			
+			# For each atom in the molecule...
+			foreach $atom (atoms($mol)) {
+									
+				# ... if this atom's residue name is the same as
+				# the putative ion residue name...
+				if ($atom->{SUBNAME} eq $ion_subname) {
+				
+					# ... print a warning
+					silico_msg('v', "Warning: Residues with name \"$ion_subname\" are already present!\n") if (!$flag);
+					# and set the flag.
+					$flag = 1;
+				
+					# Prompt the user for what to do.
+					# The WHILE loop ensures that a satisfactory response
+					# is received.
+					while (1) {
+																	
+						# Exit the loop if a satisfactory response
+						# is obtained.
+						last if (defined $response &&
+								($response eq 'c' ||
+								$response eq 'r' ||
+								$response eq 's' ||
+								$response eq 'x'));
+					
+						# Offer options.
+						$response = prompt("[C]ontinue anyway, [R]ename ion residues, [S]kip molecule, e[X]it? ");
+						$response =~ s/ //g;
+						$response = lc $response;
+						
+						# Go back to the start of the loop and check again.
+					}
+					
+					# If we are continuing anyway...
+					if ($response eq 'c') {
+						# ... leave the control loop.
+						last SUB;
+					# If we are skipping the molecule...
+					} elsif ($response eq 's') {
+						# print out a message to let the user know that.
+						# The molecule will be written to the output file anyway.
+						silico_msg('c', "Molecule ".($i+1)." ($mol->{NAME}) has not been modified.\n");
+						next MOL;
+					# If we are exiting, then exit gracefully.
+					} elsif ($response eq 'x') {
+						silico_msg('c', "Exiting.\n");
+						exit;
+					}
+				}
+			}
+			
+			# If, having gone through all the atoms, we don't have a match for
+			# the residue name, we can safely leave the control loop, as we will now do.
+			last if ($flag == 0);
+			
+			# This loop reads a new residue name from the command line.
+			while (1) {				
+				$ion_subname = prompt("Enter new ion residue name: ");
+				$ion_subname =~ s/ //g;
+				$ion_subname = uc $ion_subname;
+				
+				last if ($ion_subname =~ /^[A-Z]{3}$/);
+			}
+		}
+		
+		# While we haven't yet exceeded the number of ions to add...
+		for ($ioncount = 1; $ioncount <= $number; ++$ioncount) {
+					
+			my $con;
+			my $replace;
+			
+			if ($replace_random) {
+				# Select a random water molecule.
+				$replace = int rand($watercount-1);
+			} else {
+			
+				$replace = $ioncount-1;
+			}
+				
+			# Do not replace a water if it has been done already!
+			redo if ($waters->[$replace]{SUBNAME} eq $ion_subname);
+			
+			# Print out an advisory notice explaining what water molecule
+			# is about to vanish.
+			silico_msg('c', "Replacing water:	Water molecule number: $replace\n",
+					"			Water molecule residue ID: $waters->[$replace]{SUBID}\n",
+					"			Water molecule first atom number: $waters->[$replace]{NUM}\n",
+					"\n");
+				
+			# Replace the oxygen's atomic data with its counterpart
+			# pertaining to an ion.
+			$waters->[$replace]{ELEMENT} = $ion_element;
+			$waters->[$replace]{ELEMENT_NUM} = $ion_element_number;
+			$waters->[$replace]{MMFF_CHARGE_CODE} = $ion_mmff_charge_code;
+			
+			$waters->[$replace]{NAME} = $ion_atname;
+			$waters->[$replace]{SUBNAME} = $ion_subname;
+			$waters->[$replace]{SUBID} = $maxres+$ioncount;
+			$waters->[$replace]{CHAIN} = 'S';
+			$waters->[$replace]{SORT_LABEL} = 2;
+			$waters->[$replace]{SEGID} = "IONS";
+			$waters->[$replace]{TER} = 1 if get_sflag('amber');
+		
+			# Delete attached hydrogen atoms.
+			foreach $con (@{$waters->[$replace]{CONNECT}}) {
+				molecule_delete_atom($mol, $con);
+			}
+			
+			# Remove connectivity records on what was the oxygen
+			# and is now an ion.
+			undef $waters->[$replace]{CONNECT};
+			undef $waters->[$replace]{BORDERS};
+		}
+						
+		# Having finished, clean up the molecule's data structure.
+		molecule_pack($mol);	
+		sort_atoms_label($mol) if $sort;
+		molecule_renumber($mol)if $renumber_atoms;
+		mol_renumber_substructures ($mol) if $renumber_res;
+	}
+	
+	ensemble_printout($mols, 'all') if $Silico::debug;
+	
+	# Write the output file.
+	write_mol_any($mols);
+}
+
+# Print finishing and timing messages.
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub sort_atoms_label {
+
+        #<
+        #? Routine to sort atoms using atom->{SORT_LABEL}
+        #; Requires: molecule.
+        #>
+
+        my $mol = $_[0];
+
+        my $i;
+        my $j;
+        my $atom;
+        my @ctable;
+        my $newatoms;
+
+        # Save the old ordering
+        $i = 0;
+        foreach $atom (@{$mol->{ATOMS}}) {
+                $atom->{OLDINDEX} = $i;
+                ++$i;
+        }
+	
+        # Sort routine
+        sub labelsort {
+		return -1 if $a->{SORT_LABEL} < $b->{SORT_LABEL};
+		return 1 if $a->{SORT_LABEL} > $b->{SORT_LABEL};
+		$b->{NUM} <=> $a->{NUM};
+        }
+
+        # Sort the atoms
+        @{$mol->{ATOMS}} = sort labelsort (@{$mol->{ATOMS}});
+
+
+        # Make translation table
+        $i = 0;
+        foreach $atom (@{$mol->{ATOMS}}) {
+                $ctable[$mol->{ATOMS}[$i]{OLDINDEX}] = $i;
+                ++$i;
+        }
+
+        # Translate connection table
+        $i = 0;
+        foreach $atom (@{$mol->{ATOMS}}) {
+                $atom = $mol->{ATOMS}[$i];
+
+                # Translate connection table
+                for ($j=0; $j<=$#{$atom->{CONNECT}}; ++$j) {
+
+                        #. Replace the old atom number with
+                        # the translated one
+                        $atom->{CONNECT}[$j] = $ctable[$atom->{CONNECT}[$j]];
+                }
+                ++$i;
+        }
+
+        # Molecule now needs to be renumbered
+        molecule_renumber($mol);
+}
+
+
+sub get_ion_data {
+
+	#<
+	#? Supply ion data to water_to_ion for a range of metallic
+	#  and other simple ionic species.
+	#; Requires: Ion name (element, charge optional)
+	#; Returns: Element, element number, MMFF charge code, residue name
+	#>
+	
+	my $ion = $_[0];
+	
+	my $el;
+	my $elnum;
+	my $mmff_charge_code;
+	my $os;
+	my $subname;
+	
+	# Hydrogen
+	if ($ion =~ /^H[0-9]*[+-]?$/) {
+		$el = "H";
+		$elnum = 1;
+
+		# Unspecified H
+		if ($ion eq "H") {
+			silico_msg('v', "Please select oxidation state of hydrogen.\n");
+			$os = get_metal_oxidation_state(-1, 1);
+			$ion .= "+" if ($os == 1);
+			$ion .= "-" if ($os == -1);
+		}
+		
+		# H+
+		if ($ion eq "H+") {
+			$mmff_charge_code = 1;
+			$subname = "HYD";
+		# H-
+		} elsif ($ion eq "H-") {
+			$mmff_charge_code = 2;
+			$subname = "HYE";
+		# Unknown H
+		} else {
+			silico_msg('d', "Invalid oxidation state for hydrogen!\n",
+					"Please choose \"H+\" or \"H-\".\n");
+		}
+	
+	# Lithium
+	} elsif ($ion eq "Li") {
+		$el = "Li";
+		$elnum = 3;
+		$mmff_charge_code = 1;
+		$subname = "LIT";
+	# Beryllium
+	} elsif ($ion eq "Be") {
+		$el = "Be";
+		$elnum = 4;
+		$mmff_charge_code = 4;
+		$subname = "BER";
+	# Nitride
+	} elsif ($ion eq "N") {
+		$el = "N";
+		$elnum = 7;
+		$mmff_charge_code = 7;
+		$subname = "NIT";
+	# Oxide
+	} elsif ($ion eq "O") {
+		$el = "O";
+		$elnum = 8;
+		$mmff_charge_code = 5;
+		$subname = "OXE";
+	# Fluoride
+	} elsif ($ion eq "F") {
+		$el = "F";
+		$elnum = 9;
+		$mmff_charge_code = 2;
+		$subname = "FLU";
+	# Sodium
+	} elsif ($ion eq "Na") {
+		$el = "Na";
+		$elnum = 11;
+		$mmff_charge_code = 1;
+		$subname = "SOD";
+	# Magnesium
+	} elsif ($ion eq "Mg") {
+		$el = "Mg";
+		$elnum = 12;
+		$mmff_charge_code = 4;
+		$subname = "MAG";
+	# Aluminium
+	} elsif ($ion eq "Al") {
+		$el = "Al";
+		$elnum = 13;
+		$mmff_charge_code = 6;
+		$subname = "ALU";
+	# Phosphide
+	} elsif ($ion eq "P") {
+		$el = "P";
+		$elnum = 15;
+		$mmff_charge_code = 7;
+		$subname = "PHO";
+	# Sulphide
+	} elsif ($ion eq "S") {
+		$el = "S";
+		$elnum = 16;
+		$mmff_charge_code = 5;
+		$subname = "SUL";
+	# Chloride
+	} elsif ($ion eq "Cl") {
+		$el = "Cl";
+		$elnum = 17;
+		$mmff_charge_code = 2;
+		$subname = "CHL";
+	# Potassium
+	} elsif ($ion eq "K") {
+		$el = "K";
+		$elnum = 19;
+		$mmff_charge_code = 1;
+		$subname = "POT";
+	# Calcium
+	} elsif ($ion eq "Ca") {
+		$el = "Ca";
+		$elnum = 20;
+		$mmff_charge_code = 4;
+		$subname = "CAL";
+	# Scandium
+	} elsif ($ion eq "Sc") {
+		silico_msg('n', "Assuming scandium is in the +3 oxidation state.\n");
+		$el = "Sc";
+		$elnum = 21;
+		$mmff_charge_code = 6;
+		$subname = "SCA";
+	# Titanium
+	} elsif ($ion =~ /^Ti[0-9]*[+-]$/) {
+		
+		$el = "Ti";
+		$elnum = 22;
+
+		# Unspecified Ti
+		if ($ion eq "Ti") {
+			silico_msg('v', "Please select oxidation state of titanium.\n");
+			$os = get_metal_oxidation_state(3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Ti3+
+		if ($ion eq "Ti3+") {
+			$mmff_charge_code = 6;
+			$subname = "TIC";
+		
+		# Ti4+
+		} elsif ($ion eq "Ti4+") {
+			$mmff_charge_code = 8;
+			$subname = "TID";
+		
+		# Unknown Ti
+		} else {
+			silico_msg('d', "Invalid oxidation state for titanium!\n",
+					"Please choose \"Ti3+\" or \"Ti4+\".\n");
+		}
+	
+	# Vanadium
+	} elsif ($ion =~ /^V[0-9]*[+-]$/) {
+	
+		$el = "V";
+		$elnum = 23;
+
+		# Unspecified V
+		if ($ion eq "V") {
+			silico_msg('v', "Please select oxidation state of vanadium.\n");
+			$os = get_metal_oxidation_state(2, 3, 4, 5);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# V2+
+		if ($ion eq "V2+") {
+			$mmff_charge_code = 4;
+			$subname = "VAB";
+		
+		# V3+
+		} elsif ($ion eq "V3+") {
+			$mmff_charge_code = 6;
+			$subname = "VAC";
+		
+		# V4+	
+		} elsif ($ion eq "V4+") {
+			$mmff_charge_code = 8;
+			$subname = "VAD";
+		
+		# V5+
+		} elsif ($ion eq "V5+") {
+			silico_msg('w', "No MMFF charge code is available for 5+ ions.\n");
+			$subname = "VAE";
+		
+		# Unknown V
+		} else {
+			silico_msg('d', "Invalid oxidation state for vanadium!\n",
+					"Please choose \"V2+\", \"V3+\", \"V4+\", or \"V5+\".\n");
+		}
+		
+	# Chromium
+	} elsif ($ion =~ /^Cr[0-9]*[+-]$/) {
+	
+		$el = "Cr";
+		$elnum = 24;
+
+		# Unspecified Cr
+		if ($ion eq "Cr") {
+			silico_msg('v', "Please select oxidation state of chromium.\n");
+			$os = get_metal_oxidation_state(2, 3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Cr2+
+		if ($ion eq "Cr2+") {
+			$mmff_charge_code = 4;
+			$subname = "CRB";
+		
+		# Cr3+
+		} elsif ($ion eq "Cr3+") {
+			$mmff_charge_code = 6;
+			$subname = "CRC";
+		
+		# Cr4+	
+		} elsif ($ion eq "Cr4+") {
+			$mmff_charge_code = 8;
+			$subname = "CRD";
+		
+		# Unknown Cr
+		} else {
+			silico_msg('d', "Invalid oxidation state for chromium!\n",
+					"Please choose \"Cr2+\", \"Cr3+\", or \"Cr4+\".\n");
+		}
+	
+	# Manganese
+	} elsif ($ion eq "Mn") {
+		silico_msg('n', "Assuming manganese is in the +2 oxidation state.\n");
+		$el = "Mn";
+		$elnum = 25;
+		$mmff_charge_code = 4;
+		$subname = "MAN";
+	# Iron
+	} elsif ($ion =~ /^Fe[0-9]*[+-]$/) {
+	
+		$el = "Fe";
+		$elnum = 26;
+	
+		# Unspecified Fe
+		if ($ion eq "Fe") {
+			silico_msg('v', "Please select oxidation state of iron.\n");
+			$os = get_metal_oxidation_state(2, 3);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Iron 2+
+		if ($ion eq "Fe2+") {
+			$mmff_charge_code = 4;
+			$subname = "FEB";
+		
+		# Iron 3+
+		} elsif ($ion eq "Fe3+") {
+			$mmff_charge_code = 6;
+			$subname = "FEC";
+		
+		# Unknown Fe
+		} else {	
+			silico_msg('d', "Invalid oxidation state for iron!\n",
+					"Please choose \"Fe2+\" or \"Fe3+\".\n");
+		}
+	
+	# Cobalt
+	} elsif ($ion =~ /^Co[0-9]*[+-]$/) {
+	
+		$el = "Co";
+		$elnum = 27;
+		
+		# Unspecified Co
+		if ($ion eq "Co") {
+			silico_msg('v', "Please select oxidation state of cobalt.\n");
+			$os = get_metal_oxidation_state(2, 3);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		if ($ion eq "Co2+") {
+			$mmff_charge_code = 4;
+			$subname = "COB";
+		
+		# Cobalt 3+
+		} elsif ($ion eq "Co3+") {
+			$mmff_charge_code = 6;
+			$subname = "COC";
+		
+		# Unknown Co
+		} else {
+			silico_msg('d', "Invalid oxidation state for cobalt!",
+					"Please choose \"Co2+\" or \"Co3+\".\n");
+		}
+	
+	# Nickel
+	} elsif ($ion eq "Ni") {
+		silico_msg('n', "Assuming nickel is in the +2 oxidation state.\n");
+		$el = "Ni";
+		$elnum = 28;
+		$mmff_charge_code = 4;
+		$subname = "NIC";
+	# Copper
+	} elsif ($ion =~ /^Cu[0-9]*[+-]?$/) {
+	
+		$el = "Cu";
+		$elnum = 29;
+		
+		# Unspecified Cu
+		if ($ion eq "Cu") {
+			silico_msg('v', "Please select oxidation state of copper.\n");
+			$os = get_metal_oxidation_state(1, 2);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+
+		# Copper 1+
+		if ($ion eq "Cu+") {
+			$mmff_charge_code = 1;
+			$subname = "CUA";
+		
+		# Copper 2+
+		} elsif ($ion eq "Cu2+") {
+			$mmff_charge_code = 4;
+			$subname = "CUB";
+		
+		# Unknown Cu
+		} else {
+			silico_msg('d', "Invalid oxidation state for copper!\n",
+					"Please choose \"Cu+\" or \"Cu2+\".\n");
+		}
+	
+	# Zinc
+	} elsif ($ion eq "Zn") {
+		$el = "Zn";
+		$elnum = 30;
+		$mmff_charge_code = 4;
+		$subname = "ZNC";
+	# Gallium
+	} elsif ($ion eq "Ga") {
+		$el = "Ga";
+		$elnum = 31;
+		$mmff_charge_code = 6;
+		$subname = "GAL";
+	# Germanium
+	} elsif ($ion eq "Ge") {
+		$el = "Ge";
+		$elnum = 32;
+		$mmff_charge_code = 8;
+		$subname = "GER";
+	# Arsenide
+	} elsif ($ion eq "As") {
+		$el = "As";
+		$elnum = 33;
+		$mmff_charge_code = 7;
+		$subname = "ARS";
+	# Selenide
+	} elsif ($ion eq "Se") {
+		$el = "Se";
+		$elnum = 34;
+		$mmff_charge_code = 5;
+		$subname = "SEL";
+	# Bromide
+	} elsif ($ion eq "Br") {
+		$el = "Br";
+		$elnum = 35;
+		$mmff_charge_code = 2;
+		$subname = "BRO";
+	# Rubidium
+	} elsif ($ion eq "Rb") {
+		$el = "Rb";
+		$elnum = 37;
+		$mmff_charge_code = 1;
+		$subname = "RUB";
+	# Strontium
+	} elsif ($ion eq "Sr") {
+		$el = "Sr";
+		$elnum = 38;
+		$mmff_charge_code = 4;
+		$subname = "STR";
+	# Yttrium
+	} elsif ($ion eq "Y") {
+		silico_msg('n', "Assuming yttrium is in the +3 oxidation state.\n");
+		$el = "Y";
+		$elnum = 39;
+		$mmff_charge_code = 6;
+		$subname = "YTT";
+	# Zirconium
+	} elsif ($ion eq "Zr") {
+		silico_msg('n', "Assuming zirconium is in the +4 oxidation state.\n");
+		$el = "Zr";
+		$elnum = 40;
+		$mmff_charge_code = 8;
+		$subname = "ZIR";
+	# Niobium
+	} elsif ($ion =~ /^Nb[0-9]*[+-]$/) {
+	
+		$el = "Nb";
+		$elnum = 41;
+		
+		# Unspecified Nb
+		if ($ion eq "Nb") {
+			silico_msg('v', "Please select oxidation state of niobium.\n");
+			$os = get_metal_oxidation_state(3, 5);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Nb3+
+		if ($ion eq "Nb3+") {
+			$mmff_charge_code = 6;
+			$subname = "NBC";
+		# Nb5+
+		} elsif ($ion eq "Nb5+") {
+			silico_msg('w', "No MMFF charge code is available for 5+ ions.\n");
+			$subname = "NBE";
+		# Unknown Nb
+		} else {
+			silico_msg('d', "Invalid oxidation state for niobium!\n",
+					"Please choose \"Nb3+\" or \"Nb5+\".\n");
+		}
+	
+	# Molybdenum
+	} elsif ($ion =~ /^Mo[0-9]*[+-]$/) {
+	
+		$el = "Mo";
+		$elnum = 42;
+		
+		# Unspecified Mo
+		if ($ion eq "Mo") {
+			silico_msg('v', "Please select oxidation state of molybdenum.\n");
+			$os = get_metal_oxidation_state(4, 5, 6);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Mo4+
+		if ($ion eq "Mo4+") {
+			$mmff_charge_code = 8;
+			$subname = "MOD";
+		# Mo5+
+		} elsif ($ion eq "Mo5+") {
+			silico_msg('w', "No MMFF charge code is available for 5+ ions.\n");
+			$subname = "MOE";
+		# Mo6+
+		} elsif ($ion eq "Mo6+") {
+			silico_msg('w', "No MMFF charge code is available for 6+ ions.\n");
+			$subname = "MOF";
+		# Unknown Mo
+		} else {
+			silico_msg('d', "Invalid oxidation state for molybdenum!\n",
+					"Please choose \"Mo4+\", \"Mo5+\" or \"Mo6+\".\n");
+		}
+	
+	# Technetium
+	} elsif ($ion =~ /^Tc[0-9]*[+-]$/) {
+	
+		$el = "Tc";
+		$elnum = 43;
+		
+		# Unspecified Tc
+		if ($ion eq "Tc") {
+			silico_msg('v', "Please select oxidation state of technetium.\n");
+			$os = get_metal_oxidation_state(2, 3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Tc2+
+		if ($ion eq "Tc2+") {
+			$mmff_charge_code = 4;
+			$subname = "TCB";
+		# Tc3+
+		} elsif ($ion eq "Tc3+") {
+			$mmff_charge_code = 6;
+			$subname = "TCC";
+		# Tc4+
+		} elsif ($ion eq "Tc4+") {
+			$mmff_charge_code = 8;
+			$subname = "TCD";
+		# Unknown Tc
+		} else {
+			silico_msg('d', "Invalid oxidation state for technetium!\n",
+					"Please choose \"Tc2+\", \"Tc3+\" or \"Tc4+\".\n");
+		}
+		
+	# Ruthenium
+	} elsif ($ion =~ /^Ru[0-9]*[+-]$/) {
+	
+		$el = "Ru";
+		$elnum = 44;
+		
+		# Unspecified Ru
+		if ($ion eq "Ru") {
+			silico_msg('v', "Please select oxidation state of ruthenium.\n");
+			$os = get_metal_oxidation_state(2, 3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Ru2+
+		if ($ion eq "Ru2+") {
+			$mmff_charge_code = 4;
+			$subname = "RUB";
+		# Ru3+
+		} elsif ($ion eq "Ru3+") {
+			$mmff_charge_code = 6;
+			$subname = "RUC";
+		# Ru4+
+		} elsif ($ion eq "Ru4+") {
+			$mmff_charge_code = 8;
+			$subname = "RUD";
+		# Unknown Ru
+		} else {
+			silico_msg('d', "Invalid oxidation state for ruthenium!\n",
+					"Please choose \"Ru2+\", \"Ru3+\" or \"Ru4+\".\n");
+		}
+		
+	# Rhodium
+	} elsif ($ion =~ /^Rh[0-9]*[+-]$/) {
+	
+		$el = "Rh";
+		$elnum = 45;
+		
+		# Unspecified Rh
+		if ($ion eq "Rh") {
+			silico_msg('v', "Please select oxidation state of rhodium.\n");
+			$os = get_metal_oxidation_state(2, 3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Rh2+
+		if ($ion eq "Rh2+") {
+			$mmff_charge_code = 4;
+			$subname = "RHB";
+		# Rh3+
+		} elsif ($ion eq "Rh3+") {
+			$mmff_charge_code = 6;
+			$subname = "RHC";
+		# Rh4+
+		} elsif ($ion eq "Rh4+") {
+			$mmff_charge_code = 8;
+			$subname = "RHD";
+		# Unknown Rh
+		} else {
+			silico_msg('d', "Invalid oxidation state for rhodium!\n",
+					"Please choose \"Rh2+\", \"Rh3+\" or \"Rh4+\".\n");
+		}
+		
+	# Palladium
+	} elsif ($ion =~ /^Pd[0-9]*[+-]$/) {
+	
+		$el = "Pd";
+		$elnum = 46;
+		
+		# Unspecified Pd
+		if ($ion eq "Pd") {
+			silico_msg('v', "Please select oxidation state of palladium.\n");
+			$os = get_metal_oxidation_state(1, 2, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Pd+
+		if ($ion eq "Pd+") {
+			$mmff_charge_code = 1;
+			$subname = "PDA";
+		# Pd2+
+		} elsif ($ion eq "Pd2+") {
+			$mmff_charge_code = 4;
+			$subname = "PDB";
+		# Pd4+
+		} elsif ($ion eq "Pd4+") {
+			$mmff_charge_code = 8;
+			$subname = "PDC";
+		# Unknown Pd
+		} else {
+			silico_msg('d', "Invalid oxidation state for palladium!",
+					"Please choose \"Pd+\", \"Pd2+\" or \"Pd4+\".\n");
+		}
+		
+	# Silver
+	} elsif ($ion eq "Ag") {
+		silico_msg('n', "Assuming silver is in the +1 oxidation state.\n");
+		$el = "Ag";
+		$elnum = 47;
+		$mmff_charge_code = 1;
+		$subname = "SIL";	
+	# Cadmium
+	} elsif ($ion eq "Cd") {
+		silico_msg('n', "Assuming cadmium is in the +2 oxidation state.\n");
+		$el = "Cd";
+		$elnum = 48;
+		$mmff_charge_code = 4;
+		$subname = "CAD";	
+	# Indium
+	} elsif ($ion eq "In") {
+		silico_msg('n', "Assuming indium is in the +3 oxidation state.\n");
+		$el = "In";
+		$elnum = 49;
+		$mmff_charge_code = 6;
+		$subname = "IND";
+	# Tin
+	} elsif ($ion =~ /^Sn[0-9]*[+-]$/) {
+	
+		$el = "Sn";
+		$elnum = 50;
+		
+		# Unspecified Sn
+		if ($ion eq "Sn") {
+			silico_msg('v', "Please select oxidation state of tin.\n");
+			$os = get_metal_oxidation_state(2, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Sn2+
+		if ($ion eq "Sn2+") {
+			$mmff_charge_code = 4;
+			$subname = "SNB";
+		# Sn4+
+		} elsif ($ion eq "Sn4+") {
+			$mmff_charge_code = 8;
+			$subname = "SND";
+		# Unknown Sn
+		} else {
+			silico_msg('d', "Invalid oxidation state for tin!\n",
+					"Please choose \"Sn2+\" or \"Sn4+\".\n");
+		}
+
+	# Telluride
+	} elsif ($ion eq "Te") {
+		$el = "Te";
+		$elnum = 52;
+		$mmff_charge_code = 5;
+		$subname = "TEL";
+	# Iodide
+	} elsif ($ion eq "I") {
+		$el = "I";
+		$elnum = 53;
+		$mmff_charge_code = 2;
+		$subname = "IOD";
+	# Caesium
+	} elsif ($ion eq "Cs") {
+		$el = "Cs";
+		$elnum = 55;
+		$mmff_charge_code = 1;
+		$subname = "CES";	
+	# Barium
+	} elsif ($ion eq "Ba") {
+		$el = "Ba";
+		$elnum = 56;
+		$mmff_charge_code = 4;
+		$subname = "BAR";	
+	# Lanthanum
+	} elsif ($ion eq "La") {
+		silico_msg('n', "Assuming lanthanum is in the +3 oxidation state.\n");
+		$el = "La";
+		$elnum = 57;
+		$mmff_charge_code = 6;
+		$subname = "LAN";
+	# Cerium
+	} elsif ($ion =~ /^Ce[0-9]*[+-]?$/) {
+	
+		$el = "Ce";
+		$elnum = 58;
+		
+		# Unspecified Ce
+		if ($ion eq "Ce") {
+			silico_msg('v', "Please select oxidation state of cerium.\n");
+			$os = get_metal_oxidation_state(3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Ce3+
+		if ($ion eq "Ce3+") {
+			$mmff_charge_code = 6;
+			$subname = "CEC";
+		# Ce4+
+		} elsif ($ion eq "Ce4+") {
+			$mmff_charge_code = 8;
+			$subname = "CED";
+		# Unknown Ce
+		} else {
+			silico_msg('d', "Invalid oxidation state for cerium!\n",
+					"Please choose \"Ce3+\" or \"Ce4+\".\n");
+		}
+		
+	# Praseodymium
+	} elsif ($ion eq "Pa") {
+		silico_msg('n', "Assuming praseodymium is in the +3 oxidation state.\n");
+		$el = "Pa";
+		$elnum = 59;
+		$mmff_charge_code = 6;
+		$subname = "PRA";
+	# Neodymium
+	} elsif ($ion eq "Nd") {
+		silico_msg('n', "Assuming neodymium is in the +3 oxidation state.\n");
+		$el = "Nd";
+		$elnum = 60;
+		$mmff_charge_code = 6;
+		$subname = "NEO";
+	# Promethium
+	} elsif ($ion eq "Pm") {
+		silico_msg('n', "Assuming promethium is in the +3 oxidation state.\n");
+		$el = "Pm";
+		$elnum = 61;
+		$mmff_charge_code = 6;
+		$subname = "PRM"; # Not PRO so as to avoid confusion with proline
+	# Samarium
+	} elsif ($ion eq "Sm") {
+		silico_msg('n', "Assuming samarium is in the +3 oxidation state.\n");
+		$el = "Sm";
+		$elnum = 62;
+		$mmff_charge_code = 6;
+		$subname = "SAM";	
+	# Europium
+	} elsif ($ion eq "Eu") {
+		silico_msg('n', "Assuming europium is in the +3 oxidation state.\n");
+		$el = "Eu";
+		$elnum = 63;
+		$mmff_charge_code = 6;
+		$subname = "EUR";	
+	# Gadolinium
+	} elsif ($ion eq "Gd") {
+		silico_msg('n', "Assuming gadolinium is in the +3 oxidation state.\n");
+		$el = "Gd";
+		$elnum = 64;
+		$mmff_charge_code = 6;
+		$subname = "GAD";	
+	# Terbium
+	} elsif ($ion =~ /^Tb[0-9]*[+-]?$/) {
+	
+		$el = "Tb";
+		$elnum = 65;
+		
+		# Unspecified Tb
+		if ($ion eq "Tb") {
+			silico_msg('v', "Please select oxidation state of terbium.\n");
+			$os = get_metal_oxidation_state(3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Tb3+
+		if ($ion eq "Tb3+") {
+			$mmff_charge_code = 6;
+			$subname = "TBC";
+		# Tb4+
+		} elsif ($ion eq "Tb4+") {
+			$mmff_charge_code = 8;
+			$subname = "TBD";
+		# Unknown Tb
+		} else {
+			silico_msg('d', "Invalid oxidation state for terbium!\n",
+					"Please choose \"Tb3+\" or \"Tb4+\".\n");
+		}
+		
+	# Dysprosium
+	} elsif ($ion eq "Dy") {
+		silico_msg('n', "Assuming dysprosium is in the +3 oxidation state.\n");
+		$el = "Dy";
+		$elnum = 66;
+		$mmff_charge_code = 6;
+		$subname = "DYS";
+	# Holmium
+	} elsif ($ion eq "Ho") {
+		silico_msg('n', "Assuming holmium is in the +3 oxidation state.\n");
+		$el = "Ho";
+		$elnum = 67;
+		$mmff_charge_code = 6;
+		$subname = "HOL";
+	# Erbium
+	} elsif ($ion eq "Er") {
+		silico_msg('n', "Assuming erbium is in the +3 oxidation state.\n");
+		$el = "Er";
+		$elnum = 68;
+		$mmff_charge_code = 6;
+		$subname = "ERB";
+	# Thulium
+	} elsif ($ion eq "Tm") {
+		silico_msg('n', "Assuming thulium is in the +3 oxidation state.\n");
+		$el = "Tm";
+		$elnum = 69;
+		$mmff_charge_code = 6;
+		$subname = "THU";
+	# Ytterbium
+	} elsif ($ion eq "Yb") {
+		silico_msg('n', "Assuming ytterbium is in the +3 oxidation state.\n");
+		$el = "Yb";
+		$elnum = 70;
+		$mmff_charge_code = 6;
+		$subname = "YTE"; # Not to be confused with YTT (yttrium)
+	# Lutetium
+	} elsif ($ion eq "Lu") {
+		silico_msg('n', "Assuming lutetium is in the +3 oxidation state.\n");
+		$el = "Lu";
+		$elnum = 71;
+		$mmff_charge_code = 6;
+		$subname = "LUT";
+	# Hafnium
+	} elsif ($ion eq "Hf") {
+		silico_msg('n', "Assuming hafnium is in the +4 oxidation state.\n");
+		$el = "Hf";
+		$elnum = 72;
+		$mmff_charge_code = 8;
+		$subname = "HAF";	
+	# Tantalum
+	} elsif ($ion eq "Ta") {
+		silico_msg('n', "Assuming tantalum is in the +5 oxidation state.\n");
+		$el = "Ta";
+		$elnum = 73;
+		silico_msg('w', "No MMFF charge code is available for 5+ ions.\n");
+		$subname = "TAN";
+	# Tungsten
+	} elsif ($ion =~ /^W[0-9]*[+-]?$/) {
+	
+		$el = "W";
+		$elnum = 74;
+		
+		# Unspecified W
+		if ($ion eq "W") {
+			silico_msg('v', "Please select oxidation state of tungsten.\n");
+			$os = get_metal_oxidation_state(2, 3, 4, 5, 6);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# W2+
+		if ($ion eq "W2+") {
+			$mmff_charge_code = 4;
+			$subname = "TUB";
+		# W3+
+		} elsif ($ion eq "W3+") {
+			$mmff_charge_code = 6;
+			$subname = "TUC";
+		# W4+
+		} elsif ($ion eq "W4+") {
+			$mmff_charge_code = 8;
+			$subname = "TUD";
+		# W5+
+		} elsif ($ion eq "W5+") {
+			silico_msg('w', "No MMFF charge code is available for 5+ ions.\n");
+			$subname = "TUE";
+		# W6+
+		} elsif ($ion eq "W6+") {
+			silico_msg('w', "No MMFF charge code is available for 6+ ions.\n");
+			$subname = "TUF";
+		# Unknown W
+		} else {
+			silico_msg('d', "Invalid oxidation state for tungsten!\n",
+					"Please choose \"W2+\", \"W3+\", \"W4+\", \"W5+\" or \"W6+\".\n");
+		}
+#	# Rhenium
+#	} elsif ($ion eq "Re") {
+#	
+#	# Osmium
+#	} elsif ($ion eq "Os") {
+#	
+#	# Iridium
+#	} elsif ($ion eq "Ir") {
+#	
+	# Platinum
+	} elsif ($ion =~ /^Pt[0-9]*[+-]?$/) {
+		$el = "Pt";
+		$elnum = 78;
+		
+		# Unspecified Pt
+		if ($ion eq "Pt") {
+			silico_msg('v', "Please select oxidation state of platinum.\n");
+			$os = get_metal_oxidation_state(2, 3, 4);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Pt2+
+		if ($ion eq "Pt2+") {
+			$mmff_charge_code = 4;
+			$subname = "PTB";
+		# Pt3+
+		} elsif ($ion eq "Pt3+") {
+			$mmff_charge_code = 6;
+			$subname = "PTC";
+		# Pt4+
+		} elsif ($ion eq "Pt4+") {
+			$mmff_charge_code = 8;
+			$subname = "PTD";
+		# Unknown Pt
+		} else {
+			silico_msg('d', "Invalid oxidation state for platinum!\n",
+					"Please choose \"Pt2+\", \"Pt3+\" or \"Pt4+\".\n");
+		}
+	# Gold
+	} elsif ($ion =~ /^Au[0-9]*[+-]?$/) {
+		$el = "Au";
+		$elnum = 79;
+		
+		# Unspecified Au
+		if ($ion eq "Au") {
+			silico_msg('v', "Please select oxidation state of gold.\n");
+			$os = get_metal_oxidation_state(1, 3);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Au+
+		if ($ion eq "Au+") {
+			$mmff_charge_code = 1;
+			$subname = "AUA";
+		# Au3+
+		} elsif ($ion eq "Au3+") {
+			$mmff_charge_code = 6;
+			$subname = "AUC";
+		# Unknown Au
+		} else {
+			silico_msg('d', "Invalid oxidation state for gold!\n",
+					"Please choose \"Au+\" or \"Au3+\".\n");
+		}
+
+	# Mercury
+	} elsif ($ion =~ /^Hg[0-9]*[+-]?$/) {
+		
+		$el = "Hg";
+		$elnum = 80;
+		
+		# Unspecified Hg
+		if ($ion eq "Hg") {
+			silico_msg('v', "Please select oxidation state of mercury.\n");
+			$os = get_metal_oxidation_state(1, 2);
+			$ion .= "$os" if ($os > 1);
+			$ion .= "+";
+		}
+		
+		# Hg+
+		if ($ion eq "Hg+") {
+			$mmff_charge_code = 1;
+			$subname = "HGA";
+		# Hg2+
+		} elsif ($ion eq "Hg2+") {
+			$mmff_charge_code = 4;
+			$subname = "HGB";
+		# Unknown Hg
+		} else {
+			silico_msg('d', "Invalid oxidation state for mercury!\n",
+					"Please choose \"Hg+\" or \"Hg2+\".\n");
+		}
+	
+#	# Thallium
+#	} elsif ($ion eq "Tl") {
+#	
+#	# Lead
+#	} elsif ($ion eq "Pb") {
+#	
+#	# Bismuth
+#	} elsif ($ion eq "Bi") {
+#	
+#	# Polonium
+#	} elsif ($ion eq "Po") {
+#	
+	# Astatide
+	} elsif ($ion eq "At") {
+		$el = "At";
+		$elnum = 85;
+		$mmff_charge_code = 2;
+		$subname = "AST";
+	# Francium
+	} elsif ($ion eq "Fr") {
+		$el = "Fr";
+		$elnum = 87;
+		$mmff_charge_code = 1;
+		$subname = "FRA";	
+	# Radium
+	} elsif ($ion eq "Ra") {
+		$el = "Ra";
+		$elnum = 88;
+		$mmff_charge_code = 4;
+		$subname = "RAD";
+#	# Actinium
+#	} elsif ($ion eq "Ac") {
+#	
+#	# Thorium
+#	} elsif ($ion eq "Th") {
+#	
+#	# Protactinium
+#	} elsif ($ion eq "Pa") {
+#	
+#	# Uranium
+#	} elsif ($ion eq "U") {
+#	
+#	# Anything else
+	} else {
+		silico_msg('d', "No instructions were found for handling ions of type $ion!\n");	
+	}
+	
+	return ($el, $elnum, $mmff_charge_code, $subname);
+}
+
+sub get_metal_oxidation_state {
+
+	#<
+	#? Choose an oxidation state from a list of possibles
+	#; Requires: list of numbers
+	#; Returns: oxidation state chosen
+	#>
+	
+	my $i;
+	my $os;
+	
+	# Control loop: Ensure that a valid oxidation state has been chosen.
+	WHILE: while (1) {
+	
+		# If the oxidation state is defined...
+		if (defined $os) {
+		
+			# for each valid oxidation state for that metal...
+			foreach (@_) {
+				# exit the control loop if we have a match
+				# (i.e., $os is a valid oxidation state)
+				last WHILE if $os == $_;
+			}
+		}
+		
+		# Otherwise, if the oxidation state is not valid or not yet defined,
+		# print a message explaining what is available
+		silico_msg('v', "Available oxidation states: ");
+	
+		# for each oxidation state...
+		for ($i = 0; $i <= $#_; ++$i) {
+	
+			# ensure the oxidation state is integral. Otherwise, die with a fatal error.
+			if (!check_data_type($_[$i], "integer")) {
+				silico_msg('d', "One of the possible oxidation states is not integral!\n");
+			}
+		
+			# print it out if it is integral
+			silico_msg('v', "$_[$i]");
+			if ($i < $#_) {
+				silico_msg('v', ", ");
+			} else {
+				silico_msg('v', "\n");
+			}
+		}
+	
+		# Prompt for a selection from the user.
+		$os = prompt("Enter oxidation state: ");
+		$os =~ s/ //g;
+		
+		# Go back to the start of the WHILE loop: ensure that the chosen
+		# oxidation state is valid.
+	}
+	
+	# Return the oxidation state.
+	return $os;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

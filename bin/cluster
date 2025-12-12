@@ -1,0 +1,135 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! Cluster
+#? Cluster molecules using the very simple 'cluster' subroutine.  
+#. Molecules are assumed to be in order of increasing energy.  
+#  All molecules within the RMS threshold of molecule 1 are placed 
+#  in the first cluster.  The first molecule to fall outside that 
+#  set is used to make a second cluster and so on.  By default
+#  only the first member of each cluster is retained.  
+#. Files are clustered individually unless the -a flag is set.
+#. Molecules are renamed to include cluster number
+#. Use: cluster <file> [<flags>]
+#. Writes out a representative structure from  each cluster or all
+#  molecules sorted into clusters if the -r flag is specified
+#F
+#; -t_<number> Clustering threshold (default: 2)
+#; -a 	       Treat all input files as one set
+#; -r 	       Retain all molecules
+#SF
+#. Created: DKC 2000
+#. $Revision: 1.22.2.1.2.4 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $all;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("cluster", '$Revision: 1.22.2.1.2.4 $');
+
+# Flags
+my $t = make_flag('t', 'threshold', 'Cluster threshold', 1 , 2);	
+        make_flag('a', 'all', 'Treat all input files as one set');	
+my $r = make_flag('r', 'retain-all', 'Retain all molecules');	
+
+$Silico::debug = $Silico::debug;
+
+my @arguments = &get_arguments2('>=1');
+
+set_default_oappend('clus');
+
+foreach my $arg (@arguments) {
+	
+	silico_msg('c', "File: $arg\n");
+	
+	my $mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	my $nummols = $#$mols+1;
+	print "Read $nummols molecules\n";
+	
+	ensemble_printout($mols) if $Silico::debug;
+
+	if (get_sflag('a')) {
+		foreach (@$mols) {
+			push @$all, $_
+		}
+	} else {	
+		my $clustered = ensemble_cluster($mols, $t, $r, 1);
+		write_mol_any($clustered);
+	}
+}
+
+if (get_sflag('a')) {
+	my $clustered = ensemble_cluster($all, $t, $r, 1);
+	write_mol_any($clustered);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+	#<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

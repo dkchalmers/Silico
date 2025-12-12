@@ -1,0 +1,131 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#<
+#! mol_orient
+#? Orient molecules so that their axis of polarity is in the XZ (or XY) plane
+#  Useful for building bilayers and other structures
+#. By deffault molecules are aligned along the Y axis with the nonpolar centre at the origin
+#  and with the polar centre in the +Y direction. This is sutable for bulding a bilayer
+#  in the XZ plane (the Silico default).
+#. Use the -xy flag to orient the molecule along the Z axis for building a bilayer in the XY plane.
+#. Use: mol_orient <molecules...>
+#F
+#; -xy                  Build bilayer in the xy plane
+#; -add			Add dummy atoms at polar and nonpolar centres
+#SF
+#. $Revision: 1.15-7-gf32c0c6 $
+#. Created: DKC November 1999 and later.
+#>
+
+use strict;
+
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $starttime = (times)[0];
+
+use vars qw($debug_rings);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_orient", '$Revision: 1.15-7-gf32c0c6 $');
+
+my $xy =         make_flag('xy', 'xy-plane', 'Build blayer in the xy plane', 0);
+my $add =        make_flag('add', 'add-centres', 'Add dummy atoms for polar and nonpolar centres', 0);
+
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('orient');
+
+
+if ($xy) {
+	print "Aligning along Z axis\n";
+		
+} else {
+	print "Aligning along Y axis\n";	
+}
+
+foreach my $arg (@arguments) {
+	
+		my $fr_in;
+		my $fr_out;
+		
+		my $i = 0;
+		while (my $mol = read_mol_single($fr_in, $arg)) {
+
+			silico_msg('d', "Could not read file $arg") if !defined $mol;
+			
+			++$i;
+			
+			mol_orient_polarity($mol);
+			
+			print "\nMolecule: $i\n";
+			print "Polar centre:  @{$mol->{POLAR_CENTRE}}\n";
+			print "Nonpolar centre: @{$mol->{NONPOLAR_CENTRE}}\n";
+			
+			if ($add) {
+				mol_add_atom($mol, 'POL', 'O', @{$mol->{POLAR_CENTRE}}, 'POL', 2);
+				mol_add_atom($mol, 'NPL', 'C', @{$mol->{NONPOLAR_CENTRE}}, 'NPL', 2);
+			}
+			
+			write_mol_single($fr_out, $mol);	
+		}
+
+		close_molfile($fr_out);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+
+
+#################
+# End of script #
+#################
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+	#<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+	#; Sets: $Silico::home_dir, $Silico::lib_dir
+	#; Requires: nothing
+	#; Returns: nothing
+	#>
+
+	die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+	$Silico::home_dir = $ENV{SILICO_HOME} . "/";
+	$Silico::lib_dir  = $Silico::home_dir . "lib/";
+	push @INC, substr($Silico::lib_dir, 0, -1);
+
+	require silico;
+}

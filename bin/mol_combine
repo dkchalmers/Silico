@@ -1,0 +1,267 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_combine
+#? Combine separate molecules into a single molecule
+#. By default combines all the molecules on the command line in to one
+#  single molecule.  Each molecule is given a separate SEGID
+#. If the -p option is used to specify a 'parent' molecule, then
+#  each molecule specified on the command line will be 
+#  combined separately with the parent molecule.  This is
+#  useful for combining many ligands with a single parent
+#  protein to produce complexes.
+#. The -glide option will combine glide _pv.maegz files
+#  to produce multiple receptor/ligand structures in individual files.
+#  If the -o pdb option is chosen then the ligand will have HETATM
+#  records to be compatible with ligplot.
+#. Should work with gromacs .itp files (not well tested yet...)
+#. See also: mol_unsplit - combines molecules into a multi-molecule file
+#.
+#F
+#; -o_<format> Output file format
+#; -p_<parent protein> Combine all molecules with parent (usually protein) molecule
+#; -glide  Combine all molecules with first molecule in file. Use with glide .pv or .raw files
+#; -ra Renumber atoms 
+#; -dr Don't renumber residues i
+#SF
+#. Created: DKC 2001 and onwards
+#. $Revision: 1.29.2.4.2.9 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_combine", '$Revision: 1.29.2.4.2.9 $');
+
+my $parent =	 		make_flag('p', 	'parent-mol', "Combine all molecules individually with this parent molecule", 1 );
+my $renumber_atoms = 		make_flag('ra', 'renumber-atoms', "Renumber atoms" );
+my $renumber_chains = 		make_flag('rc', 'renumber-chains', "Renumber chains" );
+my $dont_renumber_residues = 	make_flag('dr', 'dont-renumber-residues', "Don't renumber residues");
+my $glide = 	 		make_flag('glide', 'combine-glide', "Combine glide .raw or .pv output file");
+
+
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('comb');
+
+my $pmols;
+my $max_resnum = 0;
+my $max_chain = 'A';
+if ($parent) {
+	
+	$pmols = read_mol_any($parent);
+	
+	if (!defined $pmols->[0]) {
+		mol_read_error($parent, 1);
+		silico_msg('d', "Could not open file $parent");
+	}
+	
+	foreach my $mol (@$pmols) {
+		foreach my $atom (atoms($mol)) {
+			$max_resnum = $atom->{SUBID} if $atom->{SUBID} > $max_resnum;
+			$max_chain = $atom->{CHAIN} if $atom->{CHAIN} && $atom->{CHAIN} gt $max_chain;
+		}
+	}
+}
+
+my $i = 0;
+my $molcount = 0;
+my ($obase, $oformat);
+my $newensemble;
+my $cchain = 'A';
+foreach my $arg (@arguments) {
+	
+	my $mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		silico_msg('d', "Could not open file $arg");
+	}	
+
+	if ($glide) {
+		@$pmols = ();
+		$pmols->[0] = shift @$mols;
+	}
+
+	($obase, $oformat) = get_ofilename2($mols) if !defined $obase;
+	
+	# Combine all molecules into a single ensemble
+	
+	foreach my $mol (@$mols) {
+	
+		++$molcount;
+		foreach my $atom (atoms($mol)) {
+			$atom->{MOLNUM} = $molcount;
+		}
+		
+		molecule_check_and_fix_connectivity($mol);
+		molecule_renumber2($mol) if $renumber_atoms;
+		
+		if ($renumber_chains) {
+		
+			print "Starting chain numbering from: $cchain\n";
+			($cchain, undef) = fix_pdb_chains($mol, $cchain);
+			pdb_increment_chain($cchain);
+			print "cchain $cchain\n";
+		}
+		
+		push @$newensemble, $mol;
+	}
+}
+
+if ($pmols) {
+
+	#Write a separate file combined with the parent
+
+	$i = 0;
+	foreach my $mol (@$newensemble) {
+		
+		++$i;
+		my $ens;
+		@$ens = (@$pmols, $mol);
+		
+		my $name = $pmols->[0]{NAME}."_".$mol->{NAME}."_".$i;
+		$name =~ s/ //g;
+
+		my $newensemble2 = combine($ens);
+		$newensemble2->[0]{COMMENTS} = "# Combined $mol->{SOURCE_FILE_NAME} and $pmols->[0]{SOURCE_FILE_NAME}\n";
+		$newensemble2->[0]{NAME} = $name;
+
+		undef $ens;
+		$ens->[0] = $mol;
+		
+		($obase, $oformat) = get_ofilename2($ens);
+
+		$obase .= (sprintf "_%03i", $i) if $#{$newensemble} > 0;
+		write_mol_any ($newensemble2, $obase, $oformat);
+	}
+
+} else {
+
+	# Combine all molecules into a single file
+	my $newensemble2 = combine($newensemble);
+	write_mol_any ($newensemble2, $obase, $oformat);
+
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+
+
+sub combine {
+
+	#? Combine molecules in an ensemble into a single molecule
+	#. Sets SEGID
+        #; Requires: ensemble
+        #; Returns: ensemble
+        #>
+
+	my $ensemble = $_[0];
+
+	# Set SEGID and renumber substructures
+	my $i = 0;
+	my $prevsubid = -1;
+	my $prevsegid = "";
+	my $subidcount = 0;
+	
+	foreach my $mol (@$ensemble) {
+	
+		
+		++$i;
+		
+		#print "e n $#{$mol->{ATOMS}} i $i\n";
+		
+		my $segid = "M".sprintf"%03d",($i);
+		
+		foreach my $atom (atoms($mol)) {
+			
+			$atom->{SEGID} = $segid;
+			if ($atom->{SUBID} != $prevsubid || $atom->{SEGID} ne $prevsegid) {
+				++$subidcount;
+				$prevsubid = $atom->{SUBID};
+				$prevsegid = $atom->{SEGID};
+			}
+			$atom->{SUBID} = $subidcount if !$dont_renumber_residues;
+		}
+	}
+
+	my $newensemble = ensemble_consolidate($ensemble);
+	
+	#my $mol = $newensemble->[0];
+	
+	#if (get_sflag('bond')) {
+	#
+	## Force bond generation
+	#molecule_generate_bonds($mol);
+	#molecule_generate_bondorders($mol);
+	#
+	#} elsif (!get_sflag('nobond')) {
+	#
+	## Check and fix connectivity using standard rules
+	#molecule_check_and_fix_connectivity($mol);
+	#}
+	
+	return $newensemble;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

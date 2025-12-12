@@ -1,0 +1,124 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! formatdoc
+#? Print formatted comments from silico files
+#. $Revision: 1.17.2.1.2.1 $
+#F
+#; -h Write HTML output to a file
+#; -s Generate subroutine descriptions
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @arguments;
+my $file;
+my $formattext;
+my $html;
+my $outfile;
+my $sub;
+my $tag;
+
+use vars qw($SUBHASH);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("formatdoc", '$Revision: 1.17.2.1.2.1 $');
+
+require silico_doc;
+
+$html = 	make_flag('h', undef,  'Write HTML output');
+$sub =	 	make_flag('s', undef,  'Generate subroutine descriptions');
+
+@arguments = get_arguments2('>=1');
+
+foreach $file (@arguments) {
+	silico_msg('c', "File: $file\n");
+	
+	if (!$sub) {
+		$tag .= read_doc($file, 1);
+	} else {
+		read_doc_subroutine($file);
+	}
+}
+
+if ($sub) {
+	foreach (sort keys %$SUBHASH) {
+		$tag .= "<HEAD2>$_";
+		$tag .= $SUBHASH->{$_};
+	}
+}
+
+if ($html) {
+
+	$formattext .= format_doc_html($tag);
+	$outfile = "doc.html";
+	silico_msg('c', "\n","Writing $outfile\n");
+	open (DOC, ">$outfile") || file_write_error($outfile, 1);
+	print DOC "$formattext\n";
+	close DOC;
+
+} else {
+
+	$formattext .= format_doc_txt($tag);
+	print $formattext;
+}
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

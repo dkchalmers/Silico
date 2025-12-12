@@ -1,0 +1,134 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! pdbsplit
+#? Split a PDB file into smaller pieces based on TER or MODEL records
+#  without parsing the file
+#. Use:
+#, pdbsplit file.pdb -s fnumbered produces file_00001.pdb, file_00002.pdb, etc
+#, pdbsplit file.pdb -s numbered produces file_1.pdb, file_2.pdb
+#F
+#; -s Filename output style
+#; -d <dirname> Output directory
+#; -end Split on END records
+#; -endmdl Split on ENDMDL records
+#; -ter Split on TER records
+#; -chain Split at end of each chain/SEGID.  Name output files by chain
+#; -all Split at all of the above (default but unset by selecting one of the above)
+#SF
+#. $Revision: 1.20.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $all;
+my $arg;
+my @arguments;
+my $chain;
+my $dir;
+my $end;
+my $endmdl;
+my $ter;
+my $namechain;
+my $ostyle;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("pdbsplit", '$Revision: 1.20.2.1.2.1 $');
+
+require silico_split;
+
+$ostyle = make_flag('s',      'output-style',     "Output style (numbered, fnumbered)",			1,    'fnumbered');
+$dir =    make_flag('d',      'output-directory', "Output directory",					1,     undef);
+$end =    make_flag('end',    'split-on-END',     "Split only on END records");
+$endmdl = make_flag('endmdl', 'split-on-ENDMDL',  "Split only on ENDMDL records");
+$ter =    make_flag('ter',    'split-on-TER',     "Split only on TER records");
+$chain =  make_flag('chain',  'split-on-CHAIN',   "Split only at end of each chain");
+$all =    make_flag('all',    'split-on-all',     "Split on all END, ENDMDL, TER records and chain/SEGID ends", undef, 1);
+$namechain =  make_flag('n',  'name-by-CHAIN',    "Name output files by pdb chain");
+
+@arguments = get_arguments2('>=1');
+
+$dir ||= '';
+
+$all = 0  if ($end || $endmdl || $ter || $chain);
+
+if ($all) {
+
+	$end = 1;
+	$endmdl = 1;
+	$ter = 1;
+	$chain = 1;
+}
+
+foreach $arg (@arguments) {
+	
+	if (!get_flag('quiet', 'l')) {
+		print "File: $arg\n";
+	}
+	
+	pdb_fastsplit($arg, $dir, $ostyle, $chain, $end, $endmdl, $ter, $namechain);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

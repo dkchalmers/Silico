@@ -1,0 +1,276 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! rms
+#? Calculate RMS distances between multiple sets of molecules with our without superimposition and plot out an RMS matrix
+#. The -sm flag reorders molecules within the file by name.  This is useful if the
+#  order of molecules is differerent in each file
+#. The -sa flag sorts atoms within each molecule according to a canonical smiles string.
+#  This flag deletes all hydrogen atoms and converts all double bonds to single bonds.  This
+#  option allows the calculation of RMS values for different tautomers and protonation states.
+#F
+#; -a Use all atoms including hydrogens to calculate RMS.  Uses heavy atoms by default
+#; -sm Sort molecules by name before doing rms comparison
+#; -sa Sort atoms into smiles order before doing RMS comparison.  This may be useful
+#     if molecules have different atom orders.
+#SF
+#. Created: DKC 2011-14
+#. $Revision: 1.3.2.2.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $all;
+my $all_mols;
+my $arg;
+my @arguments;
+my $count;
+my $files;
+my $firstfilebase;
+my $firstmols;
+my ($i, $j, $k);
+my $mean = 0;
+my $mol;
+my $mol1;
+my $mol2;
+my $mols;
+my $mols1;
+my $mols2;
+my $ref;
+my $rms;
+my $nlength = 10;
+my $slength = 10;
+my $sorta;
+my $sortm;
+my $sortn;
+my $starttime = (times)[0];
+my $warn;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_sybyl;
+print_title("rms_pairs", '$Revision: 1.3.2.2.2.1 $');
+
+
+my $align = make_flag('align', undef, "Align molecules using Sybyl");
+$all = make_flag('a', 'all-atom', "Calculate all atom RMS");
+$sortm = make_flag('sm', 'sort-molecules', "Sort molecules in each file by name before doing RMS comparison");
+$sorta = make_flag('sa', 'sort-atoms', "Sort atoms into smiles order before doing RMS comparison");
+
+@arguments = get_arguments2('>=1');
+
+$all = 0 if $sorta;
+
+if (!get_flag('quiet', 'l')) {
+	
+	print "\n";
+	print "Calculating RMS using all atoms\n" if ($all);
+	print "Calculating RMS using heavy atoms\n" if (!$all);
+	print "\n";
+}
+
+$firstfilebase = get_filebase($arguments[0]);
+
+silico_msg('c', "Writing RMS data to file $firstfilebase.rms\n");
+
+open (OUTFILE, ">$firstfilebase.rms") || file_write_error("$firstfilebase.rms", 1);
+
+
+set_default_oappend('rms');
+
+$i = 0;
+foreach $arg (@arguments) {
+
+	$mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	if ($sortm) {
+		silico_msg('c', "Sorting molecules by name\n");
+		@$mols = sort {$a->{NAME} cmp $b->{NAME}} @$mols;
+	}
+	
+	if ($sorta) {
+		silico_msg('c', "Sorting atoms\n");
+		
+		foreach $mol (@$mols) {
+			molecule_delete_h($mol);
+			mol_make_double_bonds_single($mol);
+			mol_sort_smiles($mol);
+		}
+	} else {
+	
+		foreach $mol (@$mols) {
+			my $s = mol_smiles_string($mol);
+			$slength = length($s) if length($s) > $slength;
+		}
+	}
+	
+	my $j = 0;
+	foreach $mol (@$mols) {
+	
+		++$j;	
+		my $s = mol_smiles_string($mol);
+		$slength = length($s) if length($s) > $slength;
+		my $l = length($mol->{NAME});
+		$nlength = $l if $l > $nlength;
+		
+		push @$all_mols, $mol;
+		$mol->{FILE} = $i+1;
+		$mol->{NUM} = $j;
+	}
+	
+	++$i;	
+}
+
+foreach $mol (@$all_mols) {
+	my $atom;
+	foreach $atom (atoms($mol)) {
+		next if !$all && $atom->{ELEMENT} eq 'H';
+		push @{$mol->{ATOMLIST}}, $atom;
+	}
+}
+
+my $string = '';
+$string .= "Heavy atom RMS" if !$all;
+$string .= "All atom RMS" if $all;
+$string .= " with alignment" if $align;
+$string .= " without alignment" if !$align;
+$string .=  "\n";
+
+print OUTFILE "#                                      ".(" "x($nlength+$slength)).$string;
+printf OUTFILE "#Count     FileNum    MolNum     %-".$nlength."s %-".$slength."s ","MolName", "Smiles";
+foreach $i (0..$#{$all_mols}-1) {
+	printf OUTFILE "%8d ", $i+1;
+}
+print OUTFILE "\n";
+
+
+$mean = 0;
+$count = 0;
+$i = 0;
+foreach $mol1 (@$all_mols) {
+
+	++$i;
+
+	printf OUTFILE "%-10d %-10d %-10d %-".$nlength."s %-".$slength."s ", $i, $mol1->{FILE}, $mol1->{NUM}, $mol1->{NAME}, $mol1->{SMILES};
+
+	$j = 0;
+	foreach $mol2 (@$all_mols) {
+	
+		last if $mol1 == $mol2;
+	
+		++$j;
+		
+		if ($align) {
+		
+			my $newmol = superimpose_sybyl($mol1, $mol2, $mol1->{ATOMLIST}, $mol2->{ATOMLIST});
+			$rms= $newmol->{RMS};
+		} else {
+			
+			$rms = rms($mol1, $mol2, !$all);
+		}
+		
+		printf OUTFILE "%8.2f ", $rms;	
+		++$warn if $rms < 0;
+		
+		++$count;
+		$mean+=$rms;
+	}
+	
+	print OUTFILE "\n";
+}
+
+silico_msg('w', "RMS calculations for $warn molecules ** FAILED **.  Please check the results\n") if $warn;
+
+my $FH;
+foreach $FH (*STDOUT, *OUTFILE) {
+
+	print  $FH "\n\n";
+	print  $FH "# Number of pairwise comparisons: $count\n";
+	print  $FH "# RMS calculations for $warn molecules ** FAILED **.  Please check the results\n" if $warn;
+	printf $FH "# Mean RMS: %.2f\n", $mean/$count;
+}
+close OUTFILE;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub mol_make_double_bonds_single {
+
+	my $mol = $_[0];
+	
+	my $atom;
+	my $bo;
+
+	foreach $atom (atoms($mol)) {
+	
+		foreach $bo (@{$atom->{BORDERS}}) {
+			
+			$bo = 1 if $bo == 2;
+		}
+	
+	}
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

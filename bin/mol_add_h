@@ -1,0 +1,150 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_add_h
+#? Add hydrogens to a molecule 
+#. By default, a protonation state is produced which approximates
+#  physiological state.  Using the -v flag will fill all valences. ie Will 
+#  add one hydrogen to a carboxylic acid and 3 hydrogens to ammonia
+#. Adds only polar hydrogens if the 'polar' flag is used.  Adds hydrogens to 
+#  carbon only if 'nonpolar' flag is used
+#F
+#; -polar Add only polar hydrogens
+#; -nonpolar Add only nonpolar hydrogens (hydrogens on carbon)
+#; -v Fill valence
+#; -d File containing atom names and connectivities ($SILICO_HOME/data/amino_acid_atoms.dat)
+#; -ns Do not sort atoms
+#; -p Print atoms with formal charges
+#SF
+#. Created: DKC 2001-3
+#. $Revision: 1.32.2.1.2.4 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+use vars qw(%Amino_Nucleic_Acids);
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_add_h", '$Revision: 1.32.2.1.2.4 $');
+
+require silico_hydrogens;
+
+my $polar =  	make_flag('polar', 'polar-hydrogens', "Add only polar hydrogens");
+my $nonpolar =  make_flag('nonpolar', 'nonpolar-hydrogens', "Add only nonpolar (carbon) hydrogens");
+my $fillvalence =  make_flag('v', 'fill-valences', "Fill valences");
+my $datafile = 	make_flag('d', 'data-file', "File containing atom names and connectivities", 1, "amino_acid_atoms.dat");
+my $nosort = 	make_flag('ns', 'no-sort', 'Do not sort atoms');
+my $print =     make_flag('p', 'print-formal',  'Print atoms with formal charges');
+
+my $flag = 1 if $polar;
+$flag = 2 if $nonpolar;
+
+my @arguments = get_arguments2('>=1');
+
+if ($Amino_Nucleic_Acids{'x'}){}; # Don't warn me
+use vars qw($debug);
+
+set_default_oappend ('h');
+
+foreach my $arg (@arguments) {
+	
+	my $fr_in;
+	my $fr_out;
+
+	my $i = 0;
+	while (my $mol = read_mol_single($fr_in, $arg)) {
+
+		molecule_check_and_fix_connectivity($mol);
+		
+		my ($addcount, $delcount, undef) = mol_add_hydrogens($mol, $fillvalence, $flag);
+		
+		#molecule_formal_charge($mol);
+		
+		silico_msg('c', "Molecule $i.\tAdded $addcount and deleted $delcount hydrogens.  Formal charge: $mol->{SDF_DATA}{FORMAL_CHARGE}\n");
+		
+		# Rename hydrogens using PDB names if there are any residues with amino-acid names
+		foreach my $atom (atoms($mol)) {
+		
+			next if !$Amino_Nucleic_Acids{($atom->{SUBNAME}||'')};
+			
+			silico_msg('c', "\n");
+			molecule_pdb_rename_h($mol, $datafile);
+			last;
+		}
+		
+		pdb_molecule_sort_atoms($mol) if !$nosort;
+		
+		write_mol_single($fr_out, $mol);
+			
+		++$i;
+	}
+	
+	close_molfile($fr_out);
+	
+	silico_msg('c', "\n");
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

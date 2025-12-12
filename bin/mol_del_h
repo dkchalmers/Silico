@@ -1,0 +1,185 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_del_h
+#? Delete all hydrogens from a file.
+#. Output file <filebase>_noh.<ext>
+#F
+#; -res   Delete hydrogens on a particular residue name
+#; -n Delete all nonpolar hydrogens
+#; -nsp2 Delete all nonpolar hydrogens except sp2 hydrogens (aromatics, aldehydes, etc)
+#SF
+#. Created: DKC 2/1/2000
+#. $Revision: 1.25.2.1.2.3 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $connect;
+my $nonpolar;
+my $oname;
+my $resname;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_del_h", '$Revision: 1.25.2.1.2.3 $');
+
+require silico_hydrogens;
+
+$resname = make_flag('res', 'residue-name', 'Delete hydrogens on a particular residue name', 1);
+$nonpolar = make_flag('n', 'delete-nonpolar', 'Delete all nonpolar hydrogens');
+my $nonpolar_sp2 = make_flag('nsp2', 'delete-nonpolar-retain-sp2', 'Delete all nonpolar hydrogens except sp2');
+
+@arguments = get_arguments2('>=1');
+
+set_default_oappend('noh');
+set_default_oappend('nohres') if $resname;
+
+# Loop over input files
+foreach $arg (@arguments) {
+	
+	my $delcount;	
+	my $filebase;
+	my $mol;
+	my $mols;
+	my $obase;
+	my $oformat;
+	
+	print "File: $arg\n" if (!get_flag('quiet', 'l'));
+	
+	$filebase = get_filebase($arg);
+	
+	$mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach $mol (@$mols) {
+
+		molecule_check_and_fix_connectivity($mol);
+		
+		if ($nonpolar || $nonpolar_sp2 ) {
+			
+			$delcount = molecule_delete_nonpolar_h($mol, $nonpolar_sp2);
+		
+		} elsif ($resname) {
+			$delcount = molecule_delete_h_resname($mol, $resname);
+		} else {
+			print "here";
+			$delcount = molecule_delete_h($mol);
+		}
+		
+		$delcount ||= 0;
+		silico_msg('n', "Deleted $delcount hydrogens\n");
+	}
+	
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+sub molecule_delete_h_resname {
+	
+	#<
+	#? Delete all hydrogens from a particular residue type within a molecule
+	#; Requires: Molecule
+	#; Returns: number of deleted hydrogens
+	#>
+
+	my $mol = $_[0];
+	my $resname = $_[1];
+	
+	my $i;
+	my $conatom;
+	my $atom;
+	my $delcount = 0;
+	my $subname;
+	
+	$resname =~ s/ //g;
+	
+	$i = 0;
+	foreach $atom (atoms($mol)) {
+	
+		$subname = $atom->{SUBNAME};
+		$subname =~ s/ //g;
+
+		# Delete hydrogens
+		if  ($atom->{ELEMENT} eq 'H' && ($subname eq $resname)) {
+		
+			molecule_delete_atom($mol, $i);
+			++$delcount;
+		}
+		
+		++$i;
+	}
+	
+	# Pack and renumber remaining atoms
+	molecule_pack($mol);
+	molecule_renumber($mol);
+	$mol->{NUMBONDS} = molecule_count_numbonds($mol);
+
+	return $delcount;
+}
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

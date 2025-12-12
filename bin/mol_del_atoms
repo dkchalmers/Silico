@@ -1,0 +1,248 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! mol_del_atoms
+#? Delete atoms from a file
+#. Atoms are selected on the basis of their names, their elements or their
+#  residue names.
+#. Name, element and residue name options accept space separated values, which
+#  are ORed. For example, -e C,N would mean "delete carbons or nitrogens".
+#. The * wildcard can be used in atom or residue names, but it must be enclosed
+#  in quotes to escape the shell.
+#  For example, mol_del_atoms -a N'*' file.mol2 will delete atoms whose names start
+#  with N in all molecules in file.mol2.
+#. The various criteria are ANDed. For example, -r HOH -e O,H would mean
+#  "delete all atoms whose residue name is HOH and which are oxygens or hydrogens".
+#. If any given criterion is left blank, any value for that criterion is considered
+#  acceptable.
+#. Use silico atom specifiers given in on the command line using the -as flag
+#  or in a file using the -asf flag
+#F
+#; -a Atom names (space separated list)
+#; -n Atom numbers (space separated list, atoms are numbered starting at 1)
+#; -e Atom elements (space separated list)
+#; -r Residue names (space separated list)
+#; -as_<string> Use Atom Specifier 
+#; -asf_<filename> Filename containing atom specifier
+
+#; -c Combine all input files to a single output file
+#; -q Speed up deletion if all molecules in file are identical
+#
+#INCLUDE aslflags1.txt
+#INCLUDE aslflags2.txt
+#
+#SF
+#. $Revision: 1.21.2.1.2.8 $
+#>
+
+use strict;
+
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @anames    = ();
+my @anums     = ();
+my @elements  = ();
+my @resnames  = ();
+my @rnames    = ();
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_del_atoms", '$Revision: 1.21.2.1.2.8 $');
+
+my $anames   = make_flag('a', undef, 'Atom name(s)',    1);
+my $anums    = make_flag('n', undef, 'Atom number(s)',  1);
+my $elements = make_flag('e', undef, 'Atom element(s)', 1);
+my $rnames   = make_flag('r', undef, 'Residue name(s)', 1);
+
+my $invert =  make_flag('1', 'invert', 'Invert selection', 1);
+my $combine = make_flag('c', 'combine', 'Combine all input files to a single output file', 1);
+my $quick   = make_flag('q', 'quick',   "Speed up deletion if all molecules in file are identical");
+
+my $as_string = make_flag('as', 'atom-specifiers', "Atom specifier string", 1);
+my $asf = make_flag('asf', 'atom-specifier-file', "Atom specifier file", 1);
+
+my $as;
+my $as_names;
+if ($as_string || $asf) {
+		
+	if ($as_string) {
+		@$as = split /\s+/, $as;
+	} else {
+
+		($as, $as_names) = read_atom_specifier_file($asf);
+		
+	}
+
+	silico_msg('c', heading ("Atom specifiers\n"));
+	foreach (@$as) {
+		print "$_\n";
+	}
+	print "\n";
+}
+
+@anames   = split /\s+/, $anames   if $anames;
+@anums    = split /\s*,\s*/, $anums    if $anums;
+@elements = split /\s*,\s*/, $elements if $elements;
+@rnames   = split /\s*,\s*/, $rnames   if $rnames;
+
+# Throw away spaces
+foreach (@anames, @anums, @elements, @rnames) {
+	$_ =~ s/ //g;
+}
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('del');
+
+if (!defined $anames[0] && !defined $anums[0] && !defined $elements[0] && !defined $rnames[0]) {
+	silico_msg('d', "No atom name, number, element or residue name specified!\n", "Please specify one of the atom selection flags.\n");
+}
+
+my $fr_out;
+my $molcount = 0;
+
+foreach my $arg (@arguments) {
+
+	undef $fr_out if !$combine;
+
+	my $fr_in;
+	my $list;
+
+	while (my $mol = read_mol_single($fr_in, $arg)) {
+
+		my $delcount = 0;
+
+		++$molcount;
+		print "molcount $molcount\n";
+
+		if (!$quick || $molcount == 1) {
+
+			$list = select_atoms($mol);
+		}
+
+		molecule_delete_atoms($mol, $list);
+		molecule_pack($mol);
+		write_mol_single($fr_out, $mol);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+###############
+# Subroutines #
+###############
+
+sub select_atoms {
+
+	my $mol = $_[0];
+	my $list;
+	my $delcount;
+
+	my $i = 0;
+	foreach my $atom (atoms($mol)) {
+
+		my $nameflag = 0;
+		my $numflag  = 0;
+		my $elflag   = 0;
+		my $resflag  = 0;
+
+		if ($anames[0]) {
+			my $a = $atom->{NAME};
+			$a =~ s/ //g;
+			foreach (@anames) {
+				$nameflag = 1 if $a eq $_;
+			}
+		} else {
+			$nameflag = 1;
+		}
+
+		if ($anums[0]) {
+			my $n = $atom->{NUM};
+			foreach (@anums) {
+				$numflag = 1 if $n == $_;
+			}
+		} else {
+			$numflag = 1;
+		}
+
+		if ($rnames[0]) {
+			my $r = $atom->{SUBNAME};
+			$r =~ s/ //g;
+			foreach (@rnames) {
+				$resflag = 1 if $r eq $_;
+			}
+		} else {
+			$resflag = 1;
+		}
+
+		if ($elements[0]) {
+			foreach (@elements) {
+				$elflag = 1 if $atom->{ELEMENT} eq $_;
+			}
+		} else {
+			$elflag = 1;
+		}
+
+		my $flag = $nameflag + $numflag + $resflag + $elflag;
+
+		if ($flag == 4) {
+			push @$list, $i;
+			++$delcount;
+		}
+
+		++$i;
+	}
+
+	print "Selected $delcount atoms\n";
+
+	return $list
+}
+
+sub silico_setup {
+
+	#<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+	#; Sets: $Silico::home_dir, $Silico::lib_dir
+	#; Requires: nothing
+	#; Returns: nothing
+	#>
+
+	die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+	$Silico::home_dir = $ENV{SILICO_HOME} . "/";
+	$Silico::lib_dir  = $Silico::home_dir . "lib/";
+	push @INC, substr($Silico::lib_dir, 0, -1);
+
+	require silico;
+}

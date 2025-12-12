@@ -1,0 +1,348 @@
+#!/usr/bin/perl -w
+#!/usr/bin/perl -d:NYTProf -w
+
+#  COPYRIGHT NOTICE
+#
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! find_ligand_contacts
+#? Find protein contacts for a ligand. Provide Silico atom selection strings suitable for
+#  use by the pacs_ligand script
+#. Usage example: find_ligand_contacts -n 6 -bcr 1 -nbcr 1 4buo.pdb
+#. This example will find protein-ligand contacts for molecule number 6 in the file 4buo.pdb.
+#  One backbone and one non-backbone contact per residue will be listed
+#F
+#; -c_<real> Maximum contact distance (default 5.0 Ang)
+#; -n_<int> Molecule number of ligand
+#; -p Use periodic boundary conditions to measure distances (only works for cuboid cells)
+#; -all Find all ligand contact residues
+#; -cr_<int> Find this number of contacts per ligand residue
+#; -pcr_<int> Number of 'polar' contacts per ligand residue (i.e. ligand atom is O or N)
+#; -npcr_<int> Number of 'nonpolar'  ontacts per ligand residue (i.e. ligand atom is not O or N)
+#; -bcr_<int> Number of backbone contacts per ligand residue (i.e. atoms are peptide C, N, O, CA or N)
+#; -nbcr_<int> Number of non-backbone contacts per ligand residue (i.e. atoms are not peptide C, N, O, CA or N)
+#; -ca_<int> Maximum number of contacts per ligand atom
+#; -min_<int> Retain only molecules with at least this number of atoms (default 10)
+#; -split Format output strings by ligand residue
+
+#SF
+#. Created: DKC November 1999-2025
+#. $Revision: 1.15-80-g67aad2a $
+#>
+
+use strict;
+
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $fr_in;
+my $c;
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("find_ligand_contacts", '$Revision: 1.15-80-g67aad2a $');
+
+my $cutoff        = make_flag('c',    'cut-off-distance',  "Maximum close contact distance", 1, 5.0);
+my $lignum        = make_flag('n',    'ligand-mol-number', "Molecule number of ligand", 1);
+my $periodic      = make_flag('p',    'periodic', "Use periodic cell to measure distances", 1);
+$c->{ALL}         = make_flag('all',  'find-contact-residues');
+$c->{CONTACTS}    = make_flag('cr',   'contacts-per-residue',             "Maximum number of close contacts per residue",             1);
+$c->{POLAR}       = make_flag('pcr',  'polar-contacts-per-residue',       "Maxumum number of polar close contacts per residue",       1);
+$c->{NONPOLAR}    = make_flag('npcr', 'nonpolar-contacts-per-residue',    "Maximum number of nonpolar close contacts per residue",    1);
+$c->{BACKBONE}    = make_flag('bcr',  'backbone-contacts-per-residue',    "Maximum number of backbone close contacts per residue",    1);
+$c->{NONBACKBONE} = make_flag('nbcr', 'nonbackbone-contacts-per-residue', "Maximum number of nonbackbone close contacts per residue", 1);
+my $contacts_per_ligand_atom = make_flag('ca',    'contacts-per-atom', "Maximum number of contacts per ligand atom", 1);
+my $minatoms                 = make_flag('min',   'minimum-atoms',     "Retain only molecules with at least this number of atoms", 1, 10);
+my $split                    = make_flag('split', 'split-output',      "Format output strings by residue");
+
+my @typelist = qw (ALL CONTACTS POLAR NONPOLAR BACKBONE NONBACKBONE POLARATOM NONPOLARATOM);
+my %standard_protein_resnames = qw/ALA 1 ARG 1 ASN 1 ASP 1 CYS 1 GLN 1 GLU 1 GLY 1 HIS 1 HID 1 HIE 1 ILE 1 LEU 1 LYS 1 MET 1 PHE 1 PRO 1 SER 1 THR 1 TRP 1 TYR 1 VAL 1 NMA 1 ACE 1/;
+#my @f = keys(%standard_protein_resnames);
+#print "Names; @f\n";
+
+my @arguments = get_arguments2('>=1');
+
+foreach my $arg (@arguments) {
+
+	my $molcount = 1;
+	while (1) {
+
+		my $mol = read_mol_single($fr_in, $arg);
+		last if !defined $mol;
+
+		molecule_check_and_fix_connectivity($mol);
+
+		print "Finding molecules\n";
+
+		my $ens = molecule_split($mol, $minatoms);
+
+		my $i = 0;
+		foreach my $mol (@$ens) {
+
+			++$i;
+			print "\n---- Molecule $i ----\n";
+			printf "%8s %8s %8s %8s\n", qw (ResNum ResName SubID NumAT);
+			my $residues = molecule_get_residues_hash($mol);
+			foreach my $res (@$residues) {
+				printf "%8d %8s %8d %8d\n", $res->{NUM}, $res->{NAME}, $res->{SUBID}, $res->{NUMATOMS};
+			}
+		}
+
+		if (!defined $lignum) {
+
+			print "\nLigand molecule number has not been set. Set this with the -n flag\n";
+			exit;
+		}
+
+		checkflag($c);
+
+		print heading("Contacts for molecule number $lignum\n");
+
+		my $lig    = $ens->[ $lignum - 1 ];
+		my $ligres = molecule_get_residues_hash($lig);
+
+		label_aa_backbone($lig) if $c->{BACKBONE} || $c->{NONBACKBONE};
+		
+		my $filebase = get_filebase($arg);
+
+		my $lasl = '';
+		my $pasl = '';
+		my $dstr = '';
+
+		# List of Atom Numbers s for -all flag
+		my $panums;
+		my $lanums;
+		my $newmol;
+		
+		$newmol->{CELL} = $mol->{CELL};
+
+		# Loop over ligand residues
+		my $lresnum = 0;
+		my $skipped;
+		foreach my $lres (@$ligres) {
+		
+			# Loop over types (CONTACTS, NONPOLAR, etc);
+			foreach my $type (@typelist) {
+
+				next if !$c->{$type};
+
+				++$lresnum;
+				print "Ligand residue $lresnum atom type: $type\n";
+
+				my $closest;
+				@$closest = ();
+
+				# Loop over atoms in each ligand residue
+				foreach my $atom1 (@{ $lres->{ATOMS} }) {
+
+					#print "$atom1->{NAME}\n";
+
+					next if $atom1->{ELEMENT} eq 'H';
+					
+					# Store ligand Atom Numbers for -all flag
+					$lanums->{ $atom1->{NUM} } = 1;
+					push @{ $newmol->{ATOMS} }, $atom1;
+
+					next if $type eq "POLAR"       && !($atom1->{ELEMENT} eq 'O' || $atom1->{ELEMENT} eq 'N');
+					next if $type eq "NONPOLAR"    && ($atom1->{ELEMENT} eq 'O'  || $atom1->{ELEMENT} eq 'N');
+					next if $type eq "BACKBONE"    && !is_aa_backbone($atom1);
+					next if $type eq "NONBACKBONE" && is_aa_backbone($atom1);
+
+					# Loop over non-ligand molecules
+					foreach my $mol (@$ens) {
+
+						next if $mol == $lig;
+						next if $mol->{NUMATOMS} < $minatoms;
+
+						# Loop over atoms in non-ligand molecules
+						foreach my $atom2 (atoms($mol)) {
+
+							next if $atom2->{ELEMENT} eq 'H';
+
+							my $d;
+							if ($periodic) {
+								$d = sqrt(distance_periodic_sq($atom1, $atom2, $mol->{CELL}));
+							} else {
+								$d = distance($atom1, $atom2);
+							}
+
+							next if $d > $cutoff;
+
+							my $subname = $atom2->{SUBNAME};
+							$subname =~ s/ //g;
+
+							if (! $standard_protein_resnames{$subname}) {
+								print "Warning: Skipping nonprotein residue '$subname'\n" if !$skipped->{$subname};
+								$skipped->{$subname} = 1;
+								next;
+							}
+
+							# Save contact atoms for -all flag
+							push @{ $newmol->{ATOMS} }, $atom2 if $c->{ALL} && !$panums->{ $atom2->{NUM} };
+
+							# Store protein Atom Numbers for -all flag
+							$panums->{ $atom2->{NUM} } = 1;
+
+							my $rec;
+							$rec->{ATOM1} = $atom1;    # Ligand atom
+							$rec->{ATOM2} = $atom2;    # Protein atom
+							$rec->{DIST}  = $d;
+							push @$closest, $rec;
+						}
+					}
+				}
+				
+				next if $c->{ALL};
+
+				# Sort contacts by distance
+				@$closest = sort { $a->{DIST} <=> $b->{DIST} } @$closest;
+
+				# Sort contacts by distance
+				@$closest = sort { $a->{DIST} <=> $b->{DIST} } @$closest;
+
+				my $atomcount;    # hash to store the number of times each ligand atom is selected
+				my $i = 0;
+
+				while (my $rec = shift @$closest) {
+
+					my $a1 = $rec->{ATOM1};    # Ligand atom
+					my $a2 = $rec->{ATOM2};    # Protein atom
+					my $n  = $a1->{NUM};
+					++$atomcount->{$n};
+
+					#print "n $n count $atomcount->{$n} $contacts_per_ligand_atom\n";
+					if ($contacts_per_ligand_atom && ($atomcount->{$n} > $contacts_per_ligand_atom)) {
+						next;
+					}
+
+					$lasl .= "SUBID:$a1->{SUBID},ANAME:$a1->{NAME}#";
+					$pasl .= "SUBID:$a2->{SUBID},ANAME:$a2->{NAME}#";
+					$dstr .= sprintf "%.2f ", $rec->{DIST};
+
+					printf "%3d %8s %8s %8s  %8s %8s %8s  %4.2f\n", $i + 1, $a1->{NAME}, $a1->{SUBNAME}, $a1->{SUBID},
+					  $a2->{NAME}, $a2->{SUBNAME}, $a2->{SUBID}, $rec->{DIST};
+
+					push @{ $newmol->{ATOMS} }, $a2;
+
+					++$i;
+					last if $i >= $c->{$type};
+				}
+			}
+		}
+
+		if ($split) {
+
+			foreach ($lasl, $pasl, $dstr) {
+
+				$_ .= "\n";
+			}
+
+		}
+
+		foreach ($lasl, $pasl) {
+			s/#$//;
+			s/ //g;
+			chomp;
+
+		}
+
+		chomp $dstr;
+
+		if ($c->{ALL}) {
+
+			my @f = sort {$a <=> $b} (keys(%$lanums));
+			$lasl = "ANUM:" . join ",", @f;
+
+			@f    = sort {$a <=> $b} (keys(%$panums));
+			$pasl = "ANUM:" . join ",", @f;
+
+			$dstr = '';
+		}
+
+		print heading("Atom selection strings");
+		print "\n-pc \"$pasl\"\n\n";
+		print "-lc \"$lasl\"\n\n";
+		print "-d \"$dstr\"\n\n" if $dstr;
+
+		$newmol->{NUMATOMS} = $#{ $newmol->{ATOMS} } + 1;
+		write_mol_single(my $fr_out, $newmol, "$filebase\_contacts_$molcount", 'pdb', undef, 'NOCONECT');
+		++$molcount;
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+###############
+# Subroutines #
+###############
+
+sub checkflag {
+
+	my $c = $_[0];
+
+	my $flag;
+	foreach my $type (@typelist) {
+
+		next if !(defined $c->{$type} && $c->{$type} > 0);
+
+		$flag = 1;
+		last;
+	}
+
+	return if $flag;
+
+	print "\nPlease set at least one of the following flags\n"
+	  . "    -all (all contact residues),\n"
+	  . "    -cr (contacts per residue),\n"
+	  . "    -pcr (polar contacts per residue), -npcr (nonpolar contacts per residue),\n"
+	  . "    -bcr (backbone contacts per residue or -nbcr (non-backbone contacts per residue)\n";
+	exit;
+
+}
+
+sub silico_setup {
+
+	#<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+	#; Sets: $Silico::home_dir, $Silico::lib_dir
+	#; Requires: nothing
+	#; Returns: nothing
+	#>
+
+	die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+	$Silico::home_dir = $ENV{SILICO_HOME} . "/";
+	$Silico::lib_dir  = $Silico::home_dir . "lib/";
+	push @INC, substr($Silico::lib_dir, 0, -1);
+
+	require silico;
+}

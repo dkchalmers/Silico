@@ -1,0 +1,141 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! Randomise 
+#? Randomise velocities and or coordinates
+#F
+#; -r Randomisation type [vels, coords, vels_coords] (default vels)
+
+#SF
+#. $Revision: 1.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+silico_setup();
+require silico_mmod;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+print_title("Randomise", '$Revision: 1.1.2.1 $');
+
+my $r		= make_flag('c',   'randomise-coordinates');
+my $v		= make_flag('v',   'randomise-velocities');
+my $frac	= make_flag('f',   'randomisation-fraction', "Fraction of velocities/coordinates to be randomised", 1, 0.01);
+my $crand	= make_flag('rc',   'coordinate-randomisation-amount', "Velocity randomisation amount (nm)", 1, 0.01);
+my $vrand	= make_flag('rv',   'velocity-randomisation-factor', "Velocity randomisation fraction (factor)", 1, 0.01);
+
+my @arguments = get_arguments2('>=1');
+
+foreach my $arg (@arguments) {
+
+	my $filebase = get_filebase($arg);
+	my $count = 0;
+	my $fh_in;
+	my $fh_out;
+	
+	while (my $mol = read_mol_single($fh_in, $arg)) {
+			
+		silico_msg('c', heading("* Randomise $mol->{NAME}: $count *\n"));
+
+			foreach my $atom (atoms($mol)) {
+
+				if ($rand(1) < $frac) {
+
+					if ($r) {
+
+
+						my $dx = rand(2)-1;
+						my $dy = rand(2)-1;
+						my $dz = rand(2)-1;
+
+						my $l = sqrt($dx**2+$dy**2+$z**2);
+
+						$atom->{X} += $dx/l*$crand;
+						$atom->{Y} += $dy/l*$crand;
+						$atom->{Z} += $dz/l*$crand;
+					}
+
+					if ($v) {
+
+
+						my $dx = rand(2)-1;
+						my $dy = rand(2)-1;
+						my $dz = rand(2)-1;
+
+						my $l = sqrt($dx**2+$dy**2+$z**2);
+
+						$atom->{X} *= $dx/l*$vrand;
+						$atom->{Y} *= $dy/l*$vrand;
+						$atom->{Z} *= $dz/l*$vrand;
+				}
+			}
+		}
+
+
+		write_mol_single($fh_out, $ens->[0]);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

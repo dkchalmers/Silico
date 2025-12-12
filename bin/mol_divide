@@ -1,0 +1,214 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! mol_divide
+#? Separate a multi-molecule file (eg Tripos mol2 or Schrodinger mae)
+#  containing into individual files, each containing one molecule.
+#. Files are put into a specified directory. This is named <filebase>.dir
+#  if a name is not provided.
+#  Each molecule is renamed with an Insight-safe name. The
+#  default behaviour renames the output file to match the molecule name. 
+#  Other file naming styles can be selected using the -s flag
+#. To separate a single molecule into multiple structures see 'mol_split'
+#. For really big files (multiple thousands of structures) consider using
+#  sdfsplit, mol2split or pdbsplit which do not parse the file and are
+#  much faster
+#. For convenience the script makes a pymol load script 'load.pml' in the output directory.
+#  Run this script in pymol to load all the files
+#. For more control over splitting PDB files by chain, waters etc see 'pdbsplit'
+#F
+#; -style Output style for file names.  molname: molecule name (not checked for duplicates!).  
+#  molname_i 'insight_safe' molecule name.  numbered: numbered, no leading zeros, fnumbered: numbered, leading zeros
+#; -n Number of structures per file (default 1)
+#; -o Output format
+#; -force Overwrite existing output
+#; -p Make pymol load script 'load.pml' in output directory
+#; -d Directory name base
+#SF
+#. Created: DKC October 2000 and on...
+#. $Revision: 1.44.2.1.2.9 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_divide", '$Revision: 1.44.2.1.2.9 $');
+
+require silico_split;
+
+make_flag('style', 'output-style', "Output style for filename (molname, molname_i, numbered, fnumbered)", 1, 'fnumbered');
+make_flag('n', 'number', "Number of structures per file", 1, 1);
+make_flag('force', 'force', "Overwrite existing output");
+make_flag('p', 'pymol-load', "Make pymol load script", 1, 1);
+make_flag('d', 'directory-base', "Directory name base", 1, 1);
+
+my @arguments = get_arguments2('>=1');
+
+foreach my $arg (@arguments) {
+	
+	molfile_divide($arg);
+		
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+sub molfile_divide {
+
+	#>
+        #? Divide multi-molecule files into a directory
+        #; Requires: directory name, output style, num structures per file, force flag
+        #; Returns: nothing
+        #>
+
+	my $arg = $_[0];
+	my $ostyle = $_[1] || get_lflag('output-style') || 'fnumbered';
+	my $num = $_[2] || get_lflag('number') || 1;
+	my $force = $_[3];
+
+	my $namehash = {};
+
+	my $filebase = get_filebase($arg);
+	my $fileext = get_fileext($arg);
+	my $dirname = get_lflag('directory-base') || $filebase;
+	$dirname =~ s/ /_/g; # Remove spaces etc
+	$dirname .= ".dir";
+
+	my $oformat = get_sflag('o') || $fileext || 'mol2';
+
+	return 0 if !makedir($dirname, $force);
+	
+	# Use fast split routines if the output format is the same as the input format,
+	# and they are one of PDB, SDF or Mol2.
+	if (($oformat eq $fileext) && ($oformat eq 'pdb' || $oformat eq 'sdf' || $oformat eq 'mol2')) {
+	
+		silico_msg('c', "Using fast split routines\n");
+		
+		# ...use the appropriate fast splitting routine
+		pdb_fastsplit($arg,  $dirname, $ostyle, 0, 1, 0, 0) if $oformat eq 'pdb';
+		sdf_fastsplit($arg,  $dirname, $ostyle) if $oformat eq 'sdf';
+		mol2_fastsplit($arg, $dirname, $ostyle) if $oformat eq 'mol2';
+		
+	} else {
+
+		set_default_oappend('');
+			
+		if ($fileext eq 'pdb' || $fileext eq 'ent') {
+		
+			silico_msg('w', "Mol_divide does not split pdb files at TER or MODEL records\n",
+					"	when changing output format\n");
+		}
+	
+		my $count = 0;
+		my $filecount = 1;
+		my $fr_in;
+		my $fr_out;
+		
+		LOOP: while (my $mol = read_mol_single($fr_in, $arg)) {
+		
+			++$count;
+			
+			# Rename according to Insight standards if needed
+			$mol->{NAME} = insight_rename(($mol->{NAME} || ""), $namehash);
+			
+			# Write the output
+			my $oname = format_oname($ostyle, $mol, $filebase, $filecount);
+
+			write_mol_single($fr_out, $mol, "$filebase.dir/$oname", $oformat, undef, "NOSORT");
+
+			if ($count == $num) {
+				undef $fr_out;
+				++$filecount;
+				$count = 0;
+			}
+			
+			close_molfile($fr_out) if $count == 0;
+		}
+	}
+
+	write_pymol_load_file($dirname) if get_lflag('pymol-load');
+}
+
+sub write_pymol_load_file {
+
+	#>
+        #? Write a pymol load.pml file
+        #; Requires: directory name
+        #; Returns: nothing
+        #>
+
+	my $dirname = $_[0];
+
+	my @files = `ls $dirname`;
+	my $fulldir = `pwd`;
+	chomp $fulldir;
+	
+	open (PFILE, ">$dirname/load.pml") || silico_msg ('w', "Could not open $dirname/load.pml for writing\n");
+	silico_msg ('c', "Writing pymol load script $dirname/load.pml\n");
+	
+	foreach (@files) {
+	
+		print PFILE "load $fulldir/$dirname/$_";
+	}
+	
+	close PFILE;
+}
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

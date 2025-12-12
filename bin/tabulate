@@ -1,0 +1,216 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! Tabulate
+#? Output data from molecule file (e.g. .sdf or .maegz file) and create delimited text file. Optionally plot
+#  histograms of data values using gnuplot
+#. 
+#F
+#. Created: DKC 2003 and on
+#. $Revision: 1.31.2.2.2.7 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+
+require silico_tabledata;
+require silico_gnuplot;
+
+print_title("tabulate", '$Revision: 1.31.2.2.2.7 $');
+
+my $plot = make_flag('plot', undef, "Use gnuplot to plot data");
+
+my @arguments = get_arguments2('>=1');
+
+# Binsize, min, max
+my $bins0 = make_bins(0.1, -10, 10);
+my $bins1 = make_bins(1, -100, 100);
+my $bins2 = make_bins(10, -1000, 1000);
+
+# Make an array of all of the bins
+my $binslist;
+@{$binslist} = ($bins0, $bins1, $bins2);
+
+my $filebase = get_filebase($arguments[0]);
+my $outfile = get_sflag('O') || $filebase."_tab.txt";
+
+open (OUTFILE, ">$outfile") || file_write_error($outfile, 1);
+	
+silico_msg('c',	"\nOutput filename: $outfile\n\n",);
+
+# Find all fields in first molecule datafile.  These are used for all subsequent files
+my $mols = read_mol_any($arguments[0], undef, undef, "NOPARSE QUIET");
+
+silico_msg('d', "Could not open file $arguments[0]\n") if !defined $mols->[0];
+
+# Find all SDF fields in all molecules
+my $hash;
+my $fh_in;
+my $count = 0;
+while (my $mol = read_mol_single($fh_in, $arguments[0])) {
+
+	foreach my $field (keys %{$mol->{SDF_DATA}}) {
+		++$hash->{$field};
+	}
+	
+	++$count;
+	if ($count == 1000) {
+		print "count $count\n";
+		silico_msg('c', "Read fields from 1000 files. Stopping reading\n");
+		last;
+	}
+}
+
+# Sort headers into alphabetical order
+my @fields = sort keys %$hash;
+	
+# Replace any tabs with spaces in header
+foreach (@fields) {
+	s/\t/    /g; 
+}
+
+# Print header to output file
+print OUTFILE "#Count\t".join ("\t", @fields);
+print OUTFILE "\tFilename\tFilecount\n";
+
+# Print field headings from file
+print heading("Data fields");
+my $i = 0;
+my $total = 0;
+foreach (@fields) {
+
+	++$i;
+	
+	my $p = (int(length($_)/25)+1)*25;
+	my $s = sprintf "%-$p"."s", $_;
+	
+	$total += length($s);
+	
+	print $s;
+	
+	if ($i == 10 || $total > 80) {
+		print "\n";
+		$i = 0;
+		$total = 0;
+	}
+}
+print "\n" if $i != 0;
+print "\n";
+	
+my $molcount = 0;
+
+foreach my $arg (@arguments) {
+	
+	chomp $arg;
+
+	my $ext = get_fileext($arg);
+		
+	my $filecount = 0;
+	my $fh_in;
+	while (my $mol = read_mol_single($fh_in, $arg)) {
+	
+		++$filecount;
+		++$molcount;
+		
+		printf OUTFILE "%5d\t", $molcount;
+		
+		foreach my $field (@fields) {
+	
+			my $val = $mol->{SDF_DATA}{$field};
+
+			if (defined $val) {
+
+				$val =~ s/\t/    /g; # Replace tabs with spaces
+				$val =~ s/\n/    /g; # Replace returns with spaces
+
+				print OUTFILE $val;
+		
+				foreach my $bins (@$binslist) {
+					bin_values($val, $field, $bins);
+				}
+			} 
+			
+			print OUTFILE "\t";		
+		}
+		
+		# Write filename, struct #
+		print OUTFILE "$arg\t$filecount\n";
+	}
+}
+
+close OUTFILE;
+
+if ($plot) {
+	my $i = 0;
+	foreach (@$binslist) {
+		gnuplot_plot_bins("$filebase.$i", $_);
+		++$i;
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

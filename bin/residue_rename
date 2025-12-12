@@ -1,0 +1,208 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! residue_rename
+#? Change a single residue name 
+#. Rename a single residue type 
+#F
+#; -a Rename all residues
+#; -e_<residue_names> List of residue names to change
+#; -n_<numbers> List of residue numbers to change
+#; -r_<residue_name> New residue name
+#SF
+#. $Revision: 1.16.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $all;
+my $arg;
+my @arguments;
+my $atom;
+my $changecount;
+my $flag;
+my $i;
+my $mol;
+my $mols;
+my $name;
+my @names;
+my $namestring;
+my $new_res_name;
+my $number;
+my @numbers;
+my @numbers1;
+my $numstring;
+my $sid;
+my $sname;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("residue_rename", '$Revision: 1.16.2.1.2.1 $');
+
+setup_flags();
+
+$all = make_flag('a', 'all-residues', "Rename all residues");
+$namestring = make_flag('e', 'existing-residue-names', "Residue names to rename", 1, undef);
+$numstring = make_flag('n', 'existing-residue-numbers', "Residue numbers to rename", 1, undef);
+$new_res_name = make_flag('r', 'new-residue-name', 'New residue name', 1, undef, 1);
+
+if (	($all && ($namestring || $numstring))
+		||
+	($namestring && $numstring)	) {
+	silico_msg('d', "Too many criteria supplied for residue selection!\n",
+			"Please use only one of: -a (rename all residues)\n",
+			"                        -e <comma,separated,names> (select by name)\n",
+			"                        -n <comma,separated,numbers> (select by number)\n");
+}
+
+if ($namestring) {
+	@names = split ',', $namestring;
+} elsif ($numstring) {
+	@numbers1 = split ',', $numstring;
+}
+
+foreach (@numbers1) {
+	push @numbers, number_range($_);
+}
+
+
+@arguments = get_arguments2('>=1');
+set_default_oappend('ren');
+
+foreach $arg (@arguments) {
+		
+	undef $i;
+	undef $mol;
+	@$mols = ();
+	
+	silico_msg('c', "\n",
+			"File: $arg\n");
+	
+	$mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	$i = 1;
+	foreach $mol (@$mols) {
+		
+		undef $atom;
+		undef $changecount;
+		
+		silico_msg('c', "\n",
+				"Molecule: $i\n");
+		
+		molecule_check_and_fix_connectivity($mol);
+		
+		$changecount = 0;
+		foreach $atom (atoms($mol)) {
+			
+			undef $sid;
+			undef $sname;
+			undef $flag;
+			
+			$flag = 0;
+			
+			$sname = $atom->{SUBNAME};
+			$sname =~ s/ //g;
+			
+			$sid = $atom->{SUBID};
+			$sid =~ s/ //g;
+			
+			if ($all) {
+				$flag = 1;
+			} elsif (defined $names[0]) {
+				foreach $name (@names) {
+					if ($sname eq $name) {
+						$flag = 1;
+						last;
+					}
+				}
+			} elsif (defined $numbers[0]) {
+				foreach $number (@numbers) {
+					if ($sid eq $number) {
+						$flag = 1;
+						last;
+					}
+				}
+			}
+			
+			next if !$flag;
+			
+			$atom->{SUBNAME} = $new_res_name;
+			++$changecount;
+		}
+		
+		silico_msg('c', "Changed the residue name of $changecount atoms\n",
+				"\n");
+				
+		++$i;
+	}
+	
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

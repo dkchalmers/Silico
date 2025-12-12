@@ -1,0 +1,173 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_amino_acids
+#? Identify individual amino acids within a molecule, divide into individual residues and provide residue names and atom names.  
+#. Atoms are sorted into a sane order unless the -ns flag is used.
+#. Amino acid definitions are in SILICO_HOME/data/amino_acids_smiles.dat
+#. Note: Requires that hydrogen atoms are present
+#F
+#; -new    Use new routines (In development - untested)
+#; -ns     Do not sort atoms
+#; -addh   Force hydrogen addition
+#; -noaddh Do not add hydrogens
+
+#. $Revision: 1.8.2.1.2.18 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+
+print_title("find_amino_acids", '$Revision: 1.8.2.1.2.18 $');
+
+my $new = 	        make_flag('new', undef,  'Use new routines');
+my $nosort = 	        make_flag('ns',  'no-sort',  'Do not sort atoms');
+my $addh = 	        make_flag('addh',  'add-hydrogens',  'Force hydrogen addition');
+my $noaddh =  		make_flag('noaddh',  'dont-add-hydrogens',  'Do not add hydrogens');
+
+require silico_smiles;
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('aa');
+
+foreach my $arg (@arguments) {
+		
+	silico_msg('c', "\nFile: $arg\n");
+	
+	my $filebase = get_filebase($arg);
+	my $mols = read_mol_any($arg, undef, undef, "quiet delalt");
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	my $nummols = $#{$mols}+1;
+	
+	my $i = 0;	
+	foreach my $mol (@$mols) {
+		
+		++$i;
+
+		silico_msg('c', "Molecule: \"$mol->{NAME}\" (number $i of $nummols)\n");
+		
+		molecule_check_and_fix_connectivity($mol);
+		
+		my $h = mol_has_h($mol);
+		
+		if (($h < 2 || $addh) && !$noaddh) {
+		
+			print "Molecule is missing hydrogens - adding some\n";
+		
+			(my $numadd, my $numdel, undef) = mol_add_hydrogens($mol, 1);
+			print "Added $numadd and deleted $numdel hydrogens\n" if $numadd || $numdel;
+		}
+		
+		label_amino_acids($mol);
+		
+		if (!$nosort) {
+			print "Sorting atoms (Note: SEGID and chain are ignored)\n";
+			pdb_molecule_sort_atoms($mol, 1, 1);
+			sanitise_segid_chain($mol);
+		}
+	}
+	
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub sanitise_segid_chain {
+
+	#<
+	#? Make sure that the chain is sane and delete SEGID
+        #>
+
+	my $mol = $_[0];
+	
+	my $oldsubid = -1;
+	
+	my $ens = molecule_split($mol);
+	
+	#ensemble_printout($ens);
+	
+	my $chain = 'A';
+	
+	foreach my $m (@$ens) {
+	
+		foreach my $atom (atoms($m)) {
+		
+			$atom->{CHAIN} = $chain;
+		}
+		
+		pdb_increment_chain($chain) if $#{$m->{ATOMS}} > 10;
+	}
+	
+	$mol = ensemble_consolidate($ens)->[0];
+
+	foreach my $atom (atoms($mol)) {
+		$atom->{SEGID} = '';
+	}
+}
+
+BEGIN {
+
+        #<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

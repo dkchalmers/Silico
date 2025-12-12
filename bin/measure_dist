@@ -1,0 +1,335 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! measure_dist
+#? Find the shortest distance between a specified atom and a specified residue
+#. Useful for investigating GPCR-ligand interactions
+#. Use options -i and -l <ligand_name> for output containing both ligand and protein
+#  in the same structure (e.g. Glide induced fit output)
+#F
+#; -p_<protfile> Protein file name (if using separate file)
+#; -r_<resnum>  Protein residue number
+#; -la_<name> Ligand atom name
+#; -lr_<resnum> Ligand residue name
+#; -ln_<num> Ligand atom number
+#; -i Input structure contains both protein and ligand (e.g. From Glide IFD docking)
+#; -f_<dist> Filter out ligands with n_dist greater than this value. 0 = ignore.  
+#; -s_<string> Skip ligands with names starting with 'string'
+#SF
+#. $Revision: 1.1.2.2 $
+#. Created: DKC 2010 and later
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @arguments;
+
+my $arg;
+my $atom;
+my $atom1;
+my $atom2;
+my $best1;
+my $best2;
+my $dist;
+my $filebase;
+my $gscore;
+my $mols;
+my $molcount;
+my $options;
+my $prot;
+my $res;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("measure_dist", '$Revision: 1.1.2.2 $');
+
+my $protfile = 	make_flag ('p',   'protein',  	"Protein filename", 1);
+my $resnum = 	make_flag ('r',   'residue-number', "Protein residue number", 1, undef, 1);
+my $lig_aname = make_flag ('la',  'ligand-atom-name', 	"Ligand atom name", 1, undef);
+my $lig_resnum = make_flag ('lr', 'ligand-residue-number', 	"Ligand residue number", 1, undef);
+my $lig_anum =  make_flag ('ln',  'ligand-atom-number', 	"Ligand atom number", 1, undef);
+my $ifd = 	make_flag ('i',   'ifd-input',	"Input structure contains both protein and ligand");
+my $ligname = 	make_flag ('l',   'ligname', 	"Ligand name", 1, undef);
+my $filter = 	make_flag ('f',   'filter',    	"Filter out ligands with n_dist greater than this value", 1);
+my $skip = 	make_flag ('s',   'skip',      	"Skip ligands starting with this string", 1);
+
+silico_msg('d', "Please specify ligand name\n") if $ifd && !$ligname;
+silico_msg('d', "Please specify ligand atom name and residue number OR ligand atom number\n") if !(($lig_aname && $lig_resnum) || $lig_anum);
+
+$lig_anum   ||= -1;
+$lig_aname  ||= 'XXXXXXXXXXXXXXXXXXX'; # Dummy 
+$lig_resnum ||= -1; # Dummy
+
+if ($ifd) {
+
+ 	silico_msg('n', "Assuming each structure contains protein and ligand\n");
+	
+} elsif (!defined $protfile) {
+
+        silico_msg('n', "No protein file was specified.  Assuming protein is the first structure in each file\n");
+	
+} else {
+
+        $mols = read_mol_any($protfile);
+        $prot = $mols->[0];
+        silico_msg('d', "Could not open protein file $protfile!\n") if !defined $prot;
+        molecule_check_and_fix_connectivity($prot);
+	mol_label_functional_group($prot);
+	
+	foreach $atom (atoms($prot)) {
+			
+		if ($atom->{SUBID} == $resnum) {
+			
+			next if !($atom->{FG}{CARBOXYLATE_O} ||  $atom->{FG}{CARBOXYLIC_O});
+			push @$res, $atom;
+			
+			print "Selected atom $atom->{NAME} from residue $atom->{SUBNAME} $atom->{SUBID}\n\n";
+		}
+	}
+	if (!defined $res->[0]) {
+		silico_msg('d', "Residue number $resnum was not found in protein molecule.  Skipping\n");
+	}
+}
+
+
+@arguments = get_arguments2('>=1');
+
+set_default_oappend('ndist');
+
+ARG: foreach $arg (@arguments) {
+
+	my $average = 0;
+	my $avcount = 0;
+	my @dist_list;
+	my $mol;
+	my $mols;
+	my $newmols;
+	
+	$molcount = 0;
+	
+	print "File: $arg\n" if (!get_flag('quiet', 'l'));
+	$mols = read_mol_any ($arg);
+	if (!defined $mols) {
+		silico_msg('e', "Can not read any molecule data from file $arg!\n",
+				"Skipping.\n");
+		next;
+	}
+	
+	$filebase = get_filebase($arg);
+	
+	
+	open (OUTFILE, ">$filebase\_ndist.txt") || silco_msg('d', "Could not open file '$filebase\_ndist.txt'\n");
+	
+	print OUTFILE "NumRet\tLigand_N\tProt_O\tDist\tGScore\tSkipped\n";
+	
+	MOL: foreach $mol (@$mols) {
+	
+		if ($ifd) {
+		
+			$prot = deep_copy($mol) if $ifd;
+			$res = find_res($prot, $resnum);
+		
+		} elsif (!$protfile && !defined $prot) {
+		
+			$prot = $mol;
+		
+			# Take first molecule as protein (eg from glide output files)
+               	 	silico_msg('c', "Assuming that the first input molecule is the protein portion of the complex\n");
+			$res = find_res($prot, $resnum);
+			next MOL;
+        	}
+		
+		if ($molcount == 0) {
+	
+			write_mol_any($prot, $filebase."_ndist_prot");
+		}
+		
+		++$molcount;
+		
+		if ($skip && $mol->{NAME} =~ /^$skip/) {
+		
+			silico_msg('c', "Skipping compound $mol->{NAME}\n");
+			next;
+		}
+		
+		my $list;
+		my $mindist = 999999;
+		foreach $atom (atoms($mol)) {
+		
+			if (($atom->{SUBID} == $lig_resnum && $atom->{NAME} eq $lig_aname) || $atom->{NUM} == $lig_anum) {
+				
+				push @$list, $atom;
+			}	
+		}
+		
+		$gscore = $mol->{SDF_DATA}{glide_gscore};
+		if (defined $gscore) {
+			$gscore =  sprintf "%8.6f", $gscore;
+		} else {
+			$gscore = 'undef';
+		} 
+		
+		# Molecules with no nitrogen have N_DIST set to -1
+		$mol->{SDF_DATA}{N_DIST} = -1;
+		
+		if (!defined $list->[0]) {
+			
+			printf OUTFILE "%4d\t%-25s\t%4s\t%4s\t%6s\t%8s\t*\n", $avcount, $mol->{NAME}, '-', '-', '-', $gscore;
+			next MOL;	
+		}
+			
+		foreach $atom1 (@$list) {
+			foreach $atom2 (@$res) {
+				$dist = distance ($atom1, $atom2);	
+				$mindist = $dist if ($dist < $mindist);
+				
+				$best1 = $atom1;
+				$best2 = $atom2;
+			}
+		}
+		
+		$mol->{SDF_DATA}{N_DIST} = $mindist;
+		
+		if ($filter && ($mindist > $filter)) {
+		
+			$mindist = sprintf "%0.2f", $mindist;
+			silico_msg('c', "Skipping compound $mol->{NAME}. Mindist $mindist > $filter\n");
+			printf OUTFILE "%4d\t%-25s\t%4s\t%4s\t%6.3f\t%8s\t*\n", $avcount, $mol->{NAME}, $best1->{NAME}, $best2->{NAME}, $mindist, $gscore;
+			next MOL;
+		}
+		
+		printf OUTFILE "%4d\t%-25s\t%4s\t%4s\t%6.3f\t%8s\t\n", $avcount, $mol->{NAME}, $best1->{NAME}, $best2->{NAME}, $mindist, $gscore;
+		
+		push @$newmols, $mol;
+		
+		++$avcount;
+		$average += $mindist;
+		
+		push @dist_list, $mindist;
+	}
+	
+	if ($avcount == 0) {
+		silico_msg('c', "No structures retained. Skipping\n");
+		next ARG;
+	} 
+	
+	if ($filter) {
+		silico_msg('c', "Filter distance set to $filter\n");
+	} else {
+		silico_msg('c', "No filter distance set\n");
+	}
+	silico_msg('c', "Retained $avcount structures of ", $molcount, "\n");
+	
+	my $middle = ($#dist_list+1)/2;
+
+	#print "$#dist_list middle\n";
+	my $median;
+	
+	if ($middle == int $middle) {
+		# odd  number of values
+		$median = $dist_list[$middle-1];
+
+	} else {
+		# even number of values
+		$median = ($dist_list[int($middle-1)]+ $dist_list[int($middle-1)])/2;
+	}
+		
+	printf "\nAverage N -> O distance for $avcount molecules is %5.3f \n\n", ($average/$avcount);
+	printf OUTFILE "\nAverage N -> O distance for $avcount molecules is %5.3f \n\n", ($average/$avcount);
+
+	write_mol_any($newmols, undef, undef, $options);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+
+sub find_res {
+
+	my $prot = $_[0];
+	my $resnum = $_[1];
+	
+	my $atom;
+	
+	
+	silico_msg('d', "Protein molecule does not have any atoms") if ! defined $prot->{NUMATOMS};
+	silico_msg('w', "Suspiciously low number of atoms in protein file\n") if $prot->{NUMATOMS} < 100;
+	molecule_check_and_fix_connectivity($prot);
+	mol_label_functional_group($prot);
+
+	foreach $atom (atoms($prot)) {
+
+		if ($atom->{SUBID} == $resnum) {
+		
+			next if !($atom->{FG}{CARBOXYLATE_O} ||  $atom->{FG}{CARBOXYLIC_O});
+			push @$res, $atom;
+			
+			print "Selected atom $atom->{NAME} from residue $atom->{SUBNAME} $atom->{SUBID}\n\n";
+		}
+	}
+
+	if (!defined $res->[0]) {
+		silico_msg('d', "Residue number $resnum was not found in protein molecule.  Skipping\n");
+	}
+	
+	return $res;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

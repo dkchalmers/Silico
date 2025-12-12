@@ -1,0 +1,154 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_renumber
+#? Renumber and/or rename atoms and/or residues in a molecule
+#F
+#; -a <Starting atom number> Renumber atoms starting from this number
+#; -r <Starting residue number> Renumber residues starting from this number
+#; -c <Starting chain letter> Relabel chains starting from this letter
+#     atom they are connected to
+#; -rename Rename atoms
+#; -method_<val>   Atom renaming method (consecutive, element, element-h). Consecutive: atom numbers are increased by 1 for each atom. 
+#       Element: Atom numbers increase per element. 
+#       Element-H: Atom numbers increase per element with hydrogens named after the parent atom
+#SF
+#. $Revision: 1.26.2.3.2.3 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_renumber", '$Revision: 1.26.2.3.2.3 $');
+
+my $atomstart =  	make_flag('a', 'starting-atomnum', "Starting atom number", 1);
+my $resstart = 		make_flag('r', 'starting-resnum', "Starting residue number", 1);
+my $chainstart = 	make_flag('c', 'starting-chain', "Starting chain letter", 1);
+my $rename = 		make_flag('rename', 'rename-atoms', "Rename atoms");
+my $rename_method =	make_flag('method', 'atom-rename-method', "Rename method [element, element-h, consecutive, consecutive-h]", 1, 'element-h');
+
+set_default_oappend('renumber');
+
+my @arguments = get_arguments2('>=1');
+
+silico_msg ('w', "No renaming/renumbering method specified. Molecule will not be modified\n\n") if !($atomstart || $resstart || $chainstart || $rename);
+silico_msg ('d', "Unrecognised option for flag -m: '$rename_method'\n") if defined $rename && !($rename_method =~ /^element/ || $rename_method eq 'consecutive');
+
+foreach my $arg (@arguments) {
+	
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+				
+	my $i = 1;
+	foreach my $mol (@$mols) {
+	
+		# Renumber chains
+		if (defined $chainstart) {
+			fix_pdb_chains($mol, $chainstart);
+		}
+		
+		# Needed?
+		molecule_check_and_fix_connectivity($mol);
+		
+		# Renumber residues
+		if (defined $resstart) {
+		
+			my $residues = molecule_get_residues($mol);
+		
+			my $rescount = $resstart;
+			
+			foreach my $res (@$residues) {
+		
+				foreach my $atom (@$res) {
+					$atom->{SUBID} =  $rescount;
+					$atom->{SUBCOUNT} = $rescount;
+				}
+			
+				++$rescount;
+			}
+		}
+		
+		# Renumber atoms
+		if (defined $atomstart) {
+			molecule_renumber($mol, $atomstart);
+		}
+
+		if ($rename) {
+			mol_rename_atoms($mol, $rename_method);
+		}
+		
+	}
+	
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+		
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

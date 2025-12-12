@@ -1,0 +1,166 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol2seq
+#? Extract amino acid sequence from molecule
+#. Output file <filebase>.xxx
+#. Flags
+#; -ih Include HETATMs
+#; -c  Combine all sequences into a single file (all.seq)
+#; -o_<format> Output format
+#. $Revision: 1.27.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $allsequences;
+my $arg;
+my @arguments;
+my $combine;
+my $ih;
+my $input_options;
+my $oformat;
+my $starttime = (times)[0];
+
+use vars qw($debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol2seq", '$Revision: 1.27.2.1.2.1 $');
+
+require silico_sequence;
+
+$ih = make_flag('ih', 'include-hetatm', "Iinclude HETATMs in sequence (as X's)");
+$combine = make_flag('c', 'combine-seqs', "Combine sequences into a single file");
+
+@arguments = get_arguments2('>=1');
+
+add_option('GAPPED', $input_options);
+add_option('NOHETATM', $input_options) if !$ih;
+
+print "Using options $input_options\n";
+
+set_default_oappend('');
+
+@$allsequences = ();
+
+foreach $arg (@arguments) {
+
+	my $filebase;
+	my $mol;
+	my $mols;
+	my $shortfilebase;
+	my $seqs;
+	
+	print "File: $arg\n" if (!quiet());
+	$filebase = get_filebase($arg);
+	$shortfilebase = get_filebase_short($arg);
+	
+	# Prevent Silico from renumbering chains 
+	$mols = read_mol_any($arg, undef, undef, 'NOCHAINFIX');
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach $mol (@$mols) {
+		
+		my $chain = 'A';
+		my $seq;
+		my $seqs;
+		
+		$seqs = mol_get_sequence($mol, $input_options);
+		
+		if (!defined $seqs) {
+			
+			silico_msg('e', "No sequences found in molecule \"$mol->{NAME}\"!\n",
+					"Skipping.\n");
+			next;
+		}
+		
+		foreach $seq (@$seqs) {
+		
+			$seq->{NAME} = $shortfilebase.$chain;
+			++$chain;
+		}
+		
+		if ($combine) {
+			@$allsequences = (@$allsequences, @$seqs);
+		} else {
+			if ($Silico::debug) {
+				foreach $seq (@$seqs) {
+					seq_printout($seq);
+				}
+			}
+		}
+
+		# Need to use get_oformat to force the default option to be 'fasta'
+		$oformat = get_oformat(undef, 'fasta');
+		write_seq_any($seqs, undef, $oformat);
+	}
+}
+
+write_seq_any($allsequences, "all", $oformat) if $combine;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

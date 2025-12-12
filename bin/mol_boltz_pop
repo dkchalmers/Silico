@@ -1,0 +1,122 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_boltz_pop
+#? Calculate the relative Boltzmann populations for an ensemble of molecules.  Assumes energies are in kJ/mol
+# and that the first structure is the lowest energy.
+#F
+#; -temp Temperature (default 310K, 37 C)
+#: -ef Energy field (default 'Relative_Potential_Energy-OPLS-2005')
+#SF
+#. $Revision: 1.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $check;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_boltz_pop", '$Revision: 1.1.2.2 $');
+
+my $temp = make_flag('temp', 'temperature', "Temperature in Kelvin", 1, 310);
+my $energy = make_flag('ef', 'energy-field', "Field containing energy in kJ/mol ", 1, 'Relative_Potential_Energy-OPLS-2005');
+
+my $boltzfield = "$energy\_boltz";
+
+@arguments = get_arguments2('>=1');
+
+set_default_oappend('boltzpop');
+
+foreach $arg (@arguments) {
+	
+	my $fr_in;
+	my $fr_out;
+	my $count = 0;
+	my $min;
+	my $mol;
+	
+	while ($mol = read_mol_single($fr_in, $arg)) {
+	
+		if ($count == 0) {
+			$min = $mol->{SDF_DATA}{$energy};
+		}
+
+		my $rel_energy = $mol->{SDF_DATA}{$energy} - $min;
+		silico_msg('d', "First structure is not the lowest energy structure\n") if $rel_energy < 0;
+
+		my $boltz_pop = exp(-$rel_energy/(0.0083144621*$temp));
+		$mol->{SDF_DATA}{$boltzfield} = $boltz_pop;
+		
+		write_mol_single($fr_out, $mol);
+		++$count;
+		if ($count%10000 ==  0) {
+			print "Read $count molecules\n";
+		}
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

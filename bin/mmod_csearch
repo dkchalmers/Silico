@@ -1,0 +1,149 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mmod_csearch
+#? Run a conformational search using Macromodel
+#F
+#; -ff_<value> Forcefield [opls2005, opls2001, amber94, amber, mm3, mm2] (default opls3)
+#; -s_<solvent> GBSA solvent [water chloroform octanol none] (default water)
+#; -cw Run search in chloroform and water solvents
+#; -method_<value> Conformational search method [mcmm, spmc, lmc2, lmcs, lmcs-mix, lmcs-shake, lmcs-mode (Default mcmm)
+#; -flap Use FLAP option for ring searchers in mcmm and low-mode searches (not implemented yet)
+#; -ns_<steps> Number of conformational search steps (default 5000)
+#; -min_<steps>  Maximum number of steps for minimisation
+#; -grad_<grad> Gradient cutoff for minimisation
+#; -force Overwrite existing output files
+#; -maxtok_<num> Maximum number of Schrodinger tokens to use
+
+#SF
+#. $Revision: 1.1.2.8 $
+#>
+
+use strict;
+package Silico;
+
+silico_setup();
+require silico_mmod;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+print_title("Mmod_csearch", '$Revision: 1.1.2.8 $');
+
+		make_flag('ff',      'force-field', "Forcefield [opls3, opls2005, opls2001, amber94, amber, mm3, mm2]", 1, 'opls3');
+my $s = 	make_flag('s',       'solvent', "Solvent [water, chloroform, octanol, none]", 1, 'water');
+my $cw = 	make_flag('cw',      'chloroform-water', "Run search in chloroform and water solvents");
+		make_flag('method',  'search-method', "Conformational search method [mcmm, spmc, lmc2, lmcs, lmcs-mix, lmcs-shake, lmcs-mode]", 1, 'mcmm');
+		make_flag('flap',    'ring-flap', "Use FLAP option for ring searchers in mcmm and low-mode searches");
+my $steps =	make_flag('ns',      'search-steps', "Number of conformational search steps", 1, 5000);
+		make_flag('min',     'min-steps', "Number of steps for minimisation", 1, 2000);
+		make_flag('grad',    'min-gradient-cutoff', "Gradient cutoff for minimisation", 1, 0.1);
+my $force =     make_flag('force',    undef, "Overwrite existing output files\n");
+		make_flag('maxtok',  'maxtok', "Maximum number of Schrodinger tokens to use", 1);
+
+my @arguments = get_arguments2('>=1');
+
+my @solvents;
+if ($cw) {
+	@solvents = qw(chloroform water);
+} else {
+	@solvents = ($s);
+}
+
+foreach my $arg (@arguments) {
+
+	foreach my $solvent (@solvents) {
+
+		print heading("* File: $arg  Solvent: $solvent *\n");
+
+		my $filebase = get_filebase($arg);
+		$filebase .= "_$solvent";
+
+		my $logfile = $filebase.".log";
+		if (-e $logfile && mmod_logfile_normal_termination($logfile) && !$force) {
+			silico_msg('c', "\nComplete output file 'log' exists. Skipping. Use -force to overwrite\n");
+			next;
+		}
+
+		my $mols = read_mol_any($arg);
+
+		# Incomplete logfile is present
+		my $outfile = $filebase."_out.maegz";
+		my $newsteps = $steps;
+		if (-e $logfile && -e $outfile && !$force) {
+
+			my $newmols = read_mol_any($outfile);
+			if ($newmols) {
+				$mols = $newmols;
+				my $ps =  mmod_logfile_num_conf($logfile);
+				$newsteps = $steps - $ps;
+				silico_msg('c', "\nFound existing output: '$outfile' with ".($#{$newmols}+1)." structures. Using this as input.\n");
+				silico_msg('c', "Steps in previous logfile: $ps. Continuing run with $newsteps steps.\n");
+			}
+		}
+
+		print "\n";
+		mmod_csearch($mols, $solvent, $newsteps, $filebase, 1);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

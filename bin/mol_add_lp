@@ -1,0 +1,110 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_add_lp
+#? Add lone pairs to a molecule 
+#F
+#SF
+#. Created: DKC 2007
+#. $Revision: 1.7.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+###################
+# Start of script #
+###################
+
+print_title("mol_add_lp", '$Revision: 1.7.2.1.2.2 $');
+
+require silico_hydrogens;
+
+my @arguments = get_arguments2('>=1');
+
+use vars qw($debug);
+
+set_default_oappend('lp');
+
+my $starttime = (times)[0];
+my $arg;
+foreach $arg (@arguments) {
+	
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	my $i = 0;
+	my $mol;
+	foreach $mol (@$mols) {
+	
+		silico_msg('c', "\nMolecule: $i\n");
+
+		molecule_check_and_fix_connectivity($mol);
+		
+		my $addcount = mol_add_lone_pairs($mol);
+		
+		silico_msg('c', "Added $addcount lone pairs\n");
+		
+		++$i;
+	}
+	
+	write_mol_any($mols);
+	silico_msg('c', "\n");
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+BEGIN {
+
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

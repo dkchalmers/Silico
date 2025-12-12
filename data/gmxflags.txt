@@ -1,0 +1,45 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#? The list of standard gromacs flags
+
+#. Gromacs settings:
+#; -g__exe_<string>    Gromacs executable (default gmx)
+#; -g__nt_<int>        Gromacs -nt flag
+#; -g__maxwarn_<num>   Gromacs grompp maximum number of warnings
+#; -g__pin             Gromacs pin threads flag
+#; -g__pinstride_<int> Gromacs pinstride for use with gmx-pin
+#; -g__pinoffset_<arr> Space delimited array of pinoffset values
+#; -g__f               Additional gromacs flags
+
+#. Gromacs local job options:
+#; -h_<hostlist>      Host list for local jobs. Space separated string. Use quotes on the command line.
+#; -maxj_<int>        Maximum number of GPU jobs(gmx, desmond, etc) allowed per GPU
+
+#. SLURM job options:
+#; -s__qos_<string>   SLURM quality of services 
+#; -s__time_<string>  SLURM maximum job run time (hrs:mins:secs)
+#; -s__nnode_<num>    SLURM number of nodes to request (default 1)
+#; -s__ncpu_<num>     SLURM number cpus
+#; -s__ngpu_<num>     SLURM number of GPUs
+#; -s__part_<string>  SLURM partition
+
+#>

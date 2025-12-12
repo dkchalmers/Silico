@@ -1,0 +1,229 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! Micelle
+#? Build a spherical micelle using based on regular distributions of points on a sphere
+#. For a similar program with random placement of molecules see vesicle_builder
+#. Use: micelle -n <num_lipids> <lipid> 
+#. Expects the <lipid> to be aligned along the +Z axis with the hydrophobic end
+#  located at the origin (0,0,0). Use mol_rotrans with the -alignz option to do this.
+#  The -offset option can be used to prevent or reduce clashes caused by overlapping 
+#  atoms at the origin.
+#. Not all numbers <num> are possible.  Use the -l flag to list available numbers
+#F
+#; -l List available packing numbers and exit
+#; -n_<num> Number of lipids to pack
+#; -offset_<dist>  Distance to offset lipid along z axis
+#SF
+#. $Revision: 1.1.2.5 $
+#. Created: DKC March 2017 and later.
+#>
+
+use strict;
+package Silico;
+
+########################
+# Variable declarations #
+#########################
+
+my $arg;
+my $starttime = (times)[0];
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("micelle", '$Revision: 1.1.2.5 $');
+
+	  make_flag('l', 'list-packings', "List available packing numbers and exit") && read_packings();
+my $num = make_flag('n', 'number', "Number of lipids", 1, undef, 1);
+my $offset = make_flag('offset', 'z-offset', "Distance to offset lipid along z axis", 1, 0);
+         
+my $packings = read_packings();
+print "\n";
+
+my @arguments = get_arguments2(1);
+
+my $mols;
+my $mol;
+my $set = $packings->[$num];
+
+if (!defined $set->[0]) {
+
+	silico_msg('e', "Packing $num not available.\n");
+	print_packings($packings);
+	exit;
+}
+
+
+foreach $arg (@arguments) {
+	$mols = read_mol_any($arg);
+}
+
+$mol = $mols->[0];
+foreach my $atom (atoms($mol)) {
+	$atom->{Z}+= $offset;
+}
+
+set_default_oappend("mic$num");
+
+my $count = 0;
+my $newmols;
+while (1) {
+
+	my $newmol = deep_copy($mol);
+	foreach my $atom (atoms($mol)) {
+		$atom->{SUBID} = $count+1;
+	}
+
+	last if !defined $set->[$count];
+	my ($x, $y, $z)  = @{$set->[$count]};
+	
+	# Convert Cartesian coordiantes of points into spherical coordinates
+	my $r = sqrt($x**2+$y**2+$z**2);
+	my $theta = acos($z / $r) * 180/3.1415;
+	my $phi = atan2 ($x,$y) * 180/3.1415;
+	
+	print "point: ".($count+1)."\n";
+	print "x: $x y: $y z: $z r: $r\n";
+	print "theta:\t$theta\n";
+	print "phi:\t$phi\n\n";
+
+	molecule_rot_angle_x($newmol, $theta);
+	molecule_rot_angle_z($newmol, $phi);
+	
+	push @$newmols, $newmol;
+	++$count;
+
+}
+
+my $micelle = ensemble_consolidate($newmols);
+
+write_mol_any($micelle);
+
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub read_packings {
+
+	#>
+        #? Read in sphere packings file
+        #; Returns: array of packing_number/coordinate_number/x,y.z
+        #>
+
+	print "Reading packings file\n\n";
+	open (PACKINGS, "$Silico::home_dir/data/packings.dat") || die;
+
+	my $set;
+
+	while (1) {
+
+		my $line = <PACKINGS>;
+
+		last if !defined $line;
+		next if $line =~ /^#/;
+		next if $line =~ /^\s*$/;
+		chomp $line;
+
+		#print "line '$line'\n";
+		die "Packings file format problem" if $line !~ /^n/;
+
+		my $n = $line;
+		$n =~ s/n //;
+
+		foreach my $i (0..$n-1) {
+			
+			foreach my $c (0..2) {
+				my $coord = <PACKINGS> || die;
+				chomp $coord;
+				#print "line 'n $n i $i c $c $coord'\n";
+
+				$set->[$n][$i][$c] = $coord;
+			}
+		}
+	}
+	
+
+	if (get_sflag('l')) {
+		print_packings($set);
+		exit;
+	}
+
+	return $set;
+}
+
+sub print_packings {
+
+	my $set = $_[0];
+
+	print heading("Available packings\n");
+
+	my $i = 0;
+	foreach my $c (1..$#{$set}) {
+	
+		next if !defined $set->[$c];
+		printf "%-5d ", $c;
+
+		++$i;
+
+		print "\n" if $i % 10 == 0;
+	}
+
+	print "\n\n";
+}
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}
+

@@ -1,0 +1,187 @@
+#!/usr/bin/perl -w
+#!/usr/bin/perl -d:NYTProf -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_split
+#? Split a molecule file into separate molecules based on connectivities.
+#. Molecules are named using the RESIDUE name of the first residue by default
+#. To separate a multi-molecule file into individual structures see 'mol_divide'
+#. Known Bugs
+#  -d option does not work properly with pdb files
+#F
+
+#; -r_<RESNAME> Retain only molecules with this residue name
+#; -min_<NUM> Retain only molecules with at least this number of atoms
+#; -max_<NUM> Retain only molecules with this number of atoms or fewer
+#; -s Name molecules by by SEGID
+#; -l Keep each molecule's largest fragment only
+#; -d Write each output molecule as a separate file
+#; -r Renumber residues of split molecules starting from 1
+#SF
+#. Created: DKC 2000 and on (and on)
+#. $Revision: 1.36.2.1.2.6 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_split", '$Revision: 1.36.2.1.2.6 $');
+
+require silico_split;
+
+# Get flags
+my $retain_res		= make_flag('r', 'retain-res', "Retain only molecules with this residue name", 1);
+my $minatoms		= make_flag('min', 'minimum-atoms', "Retain only molecules with at least this number of atoms", 1);
+my $maxatoms		= make_flag('max', 'maximum-atoms', "Retain only molecules with at most this number of atoms", 1);
+my $name_by_segid	= make_flag('s', 'name-molecule-SEGID', "Name new molecules by SEGID name");
+my $largest		= make_flag('l', 'keep-largest-fragment', "Keep each molecule's largest fragment only");
+my $sep			= make_flag('d', 'write-individual-files', "Write each output molecule as a separate file");
+my $renumber_res 	= make_flag('rr', 'renumber-residues', "Renumber residues of split molecules starting from 1");
+
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('split');
+
+foreach my $arg (@arguments) {
+	
+	silico_msg('c', "File: $arg\n");
+	
+	# Read in molecule data from the file $arg into $mols
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	# For each of the "molecules" in the file...
+	my $newmols;
+	@$newmols = ();
+	foreach my $mol (@$mols) {
+		
+		molecule_check_and_fix_connectivity($mol);
+				
+		if ($largest) {
+			push @$newmols, molecule_split_keeping_largest_mol($mol);
+		} elsif ($retain_res) {
+		
+			my $count =0;
+			foreach (@{molecule_split($mol, $minatoms)}) {
+				next if $_->{ATOMS}[0]{SUBNAME} ne $retain_res;
+				push @$newmols, $_;
+				++$count;
+			}
+			
+			silico_msg ('c', "Retained $count molecules with name '$retain_res'\n");
+		
+		} else {
+			push @$newmols, @{molecule_split($mol, $minatoms)};
+		}
+	}
+
+	if ($name_by_segid) {
+		foreach my $mol (@$newmols) {
+			$mol->{NAME} = $mol->{ATOMS}[0]{SEGID} || 'SEG';
+		}
+	}
+
+	# If the renumber_residue option is set
+	if ($renumber_res) {
+
+		my $res_count = 0;
+		foreach my $mol (@$newmols) {
+
+			++$res_count;
+
+			foreach my $atom (atoms($mol)) {
+
+				$atom->{SUBID} = $res_count;
+			}
+		}
+	}
+	
+	silico_msg('c', "\nCreated ".($#{$newmols}+1)." molecules\n\n");
+
+	if (!$sep) {
+		write_mol_any($newmols);
+	} else {
+
+		my $i = 0;
+		foreach my $mol (@$newmols) {
+			
+			++$i;
+			$i = sprintf "%05d", $i;
+	
+			my $ens;
+			$ens->[0] = $mol;
+			my $filebase = get_filebase($arg);
+
+			write_mol_any($mol, "$filebase\_split_$i");
+		}
+	}	
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

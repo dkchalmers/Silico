@@ -1,0 +1,181 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_rotrans
+#? Apply rotations and/or translations to a file
+#. Translation is applied first, followed by rotations about the X, Y and/or Z (in that order)
+#F
+#; -x_<angle> }
+#; -y_<angle> } X, Y and Z rotation angles in degrees
+#; -z_<angle> }
+#; -a_<dist> }
+#; -b_<dist> } X, Y and Z translation distances in Angstroms
+#; -c_<dist> }
+#; -alignz Translate specified atom (default atom 1) of molecule to the origin and align the molecule along the Z axis. No other rotations or transliations are performed.
+#; -ca <atomnum> Atom to be moved to the origin with alignz flag (default atom 1)
+#; -invert Make mirror image by flipping the sign of Z coordinate
+#SF
+#. $Revision: 1.17.2.1.2.4 $
+#>
+
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_rotrans", '$Revision: 1.17.2.1.2.4 $');
+
+my $rotx =		make_flag('x', undef, "X rotation angle (degrees)", 1);
+my $roty =		make_flag('y', undef, "Y rotation angle (degrees)", 1);
+my $rotz =		make_flag('z', undef, "Z rotation angle (degrees)", 1);
+my $xtrans = 	make_flag('a', undef, "X translation distance (Angstroms)", 1);
+my $ytrans = 	make_flag('b', undef, "Y translation distance (Angstroms)", 1);
+my $ztrans = 	make_flag('c', undef, "Z translation distance (Angstroms)", 1);
+my $alignz  = 	make_flag('alignz', 'align-z-axis', "Align molecule along Z axis");
+my $ca  = 	make_flag('ca', 'centre-atom', "Atom to be moved to the origin with alignz flag", 1, 1);
+my $invert = 	make_flag('invert', undef, "Invert molecule by flipping sign of Z coordinate");
+
+@arguments = get_arguments2('>=1');
+set_default_oappend('rot');
+set_default_oappend('alignz') if $alignz;
+
+foreach $arg (@arguments) {
+	
+	my $i;
+	my $mol;
+	my $mols;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any ($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	$i = 0;
+	foreach $mol (@$mols) {
+		
+		++$i;
+		
+		silico_msg('c', "Molecule:\"$mol->{NAME}\" (molecule $i of ".($#{$mols}+1).")\n");
+		
+		$xtrans ||= 0;
+		$ytrans ||= 0;
+		$ztrans ||= 0;
+		
+		if ($alignz) {
+		
+			$xtrans = -$mol->{ATOMS}[$ca-1]{X};
+			$ytrans = -$mol->{ATOMS}[$ca-1]{Y};
+			$ztrans = -$mol->{ATOMS}[$ca-1]{Z};
+		}
+		
+		molecule_translate ($mol, $xtrans, $ytrans, $ztrans);
+		silico_msg('c', "Translating molecule by vector $xtrans, $ytrans, $ztrans\n");
+		
+		if ($alignz) {
+		
+			my ($x, $y, $z) = centroid($mol);
+
+			# Convert Cartesian coordiantes of points into spherical coordinates
+			my $r = sqrt($x**2+$y**2+$z**2);
+			my $theta = acos($z / $r) * 180/3.1415;
+			my $phi = atan2 ($x,$y) * 180/3.1415;
+
+			molecule_rot_angle_z($mol, -$phi);
+			molecule_rot_angle_x($mol, -$theta);
+			silico_msg('c', "Rotating molecule by around z axis by angle $phi\n");
+			silico_msg('c', "Rotating molecule by around x axis by angle $theta\n");
+			next;
+		}
+		
+		if ($rotx) {
+			silico_msg('c', "Rotating about X axis by $rotx degrees\n");
+			molecule_rot_angle_x ($mol, $rotx);
+		}
+		if ($roty) {
+			silico_msg('c', "Rotating about Y axis by $roty degrees\n");
+			molecule_rot_angle_y ($mol, $roty);
+		}
+		if ($rotz) {
+			silico_msg('c', "Rotating about Z axis by $rotz degrees\n");
+			molecule_rot_angle_z ($mol, $rotz);
+		}	
+
+		if ($invert) {
+			silico_msg('c', "Inverting molecule\n");
+			foreach (atoms($mol)) {
+				$_->{Z} *=-1;
+			}
+		}
+	}
+	
+	write_mol_any($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

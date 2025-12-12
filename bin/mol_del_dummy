@@ -1,0 +1,120 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_del_dummy
+#? Delete all dummy atoms from a file (eg lone pairs).
+#. Output file <filebase>_nodu.<ext>
+#F
+#; -con Force regeneration of connection table
+#SF
+#. Created: DKC 2/1/2000
+#. $Revision: 1.18.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $connect;
+my $infile;
+my $mol;
+my $molecules;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_del_dummy", '$Revision: 1.18.2.1.2.1 $');
+
+require silico_hydrogens;
+
+$connect =	make_flag('con', undef,  'Force regeneration of connection table');
+@arguments = get_arguments2('>=1');
+set_default_oappend('nodu');
+
+# Loop over input files
+foreach $infile (@arguments) {
+	
+	undef $molecules;
+	
+	silico_msg('c', "File: $infile\n");
+	
+	$molecules = read_mol_any($infile);
+	if (!defined $molecules->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach $mol (@$molecules) {
+
+		if ($connect || ($mol->{NUMBONDS} == 0)) {
+			silico_msg('c', "Creating connection table for ".ftfp($mol->{NAME})."\n");
+			connect_atoms_by_distance($mol);
+		}
+		
+		molecule_delete_dummy($mol);
+	}
+	
+	write_mol_any($molecules);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

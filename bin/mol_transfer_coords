@@ -1,0 +1,181 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_transfer_coords
+#? Transfers X, Y and Z coordinates from file1 to file2 
+#. Can be useful to apply crystal complex positions to a correctly 
+#. parameterised file
+#. Use: mol_transfer_coords <file1> <file2> 
+#SF
+#. $Revision: 1.1.2.2.2.1 $
+#. Created: DKC November 1999 and later.
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my $atom;
+my @arguments;
+my $mols;
+my $mol1;
+my $starttime = (times)[0];
+my $template_key;
+my $subs_key;
+my $template_atom;
+
+
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_transfer_coords", '$Revision: 1.1.2.2.2.1 $');
+
+
+@arguments = get_arguments2('>=2');
+
+my $key;
+my $parent = shift @arguments;
+my $n;
+my $s;
+
+$mols = read_mol_any($parent);
+$mol1 =  $mols->[0];
+
+my $i = 0;
+my %atomlist;
+foreach $atom (atoms($mol1)) {
+
+	$n = $atom->{NAME};
+	$n =~ s/ //g;
+	$s = $atom->{SUBNAME};
+	$s =~ s/ //g;
+	$template_key = "$s\_$n";
+#	print " $template_key\n";
+	$atomlist{"$template_key"} = $atom;
+	++$i;
+}
+
+print "Template molecule keys\n";
+foreach (keys %atomlist) {
+	print "$_ \n";
+}
+
+foreach $arg (@arguments) {
+
+	my $mol;
+	
+	print "File: $arg\n" ;
+
+	$mols = read_mol_any ($arg);
+	if (!defined $mols) {
+		file_read_error($arg);
+		next;
+	}
+
+	foreach $mol (@$mols) {
+
+		my $residues = molecule_get_residues($mol);
+	
+		my $res;
+		my $r = 0;
+		foreach $res (@$residues) {
+
+			++$r;
+			foreach $atom (@$res) {
+
+				$n = $atom->{NAME};
+				$n =~ s/ //g;
+				$s = $atom->{SUBNAME};
+				$s =~ s/ //g;
+				
+				$subs_key = "$s\_$n";
+
+				if (defined $atomlist{$subs_key}) {
+
+					$template_atom = $atomlist{$subs_key};
+
+					$atom->{X} = $template_atom->{X};
+					$atom->{Y} = $template_atom->{Y};
+					$atom->{Z} = $template_atom->{Z};
+				} else {
+					print "No match found for key: $atomlist{$subs_key}\n";
+				}
+
+			}
+		}
+
+		print "\n";
+	
+#		@{$mol->{ATOMS}} = sort sorter @{$mol->{ATOMS}};	
+	}
+	
+	write_mol_any($mols, undef, 'mol2');
+}
+
+sub sorter {
+	
+	return 1  if !defined $a->{IDX};
+	return -1  if !defined $b->{IDX};
+	return  $a->{IDX} <=> $b->{IDX};
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

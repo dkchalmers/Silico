@@ -1,0 +1,138 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_centre
+#? Translate a molecule centre of cell (default) or origin
+#F
+#; -origin Translate centre to origin
+#; -l Centre based on each molecule's largest fragment
+#. Geometry Flags
+#; -x }
+#; -y } Dimensions of the box (Angstroms)
+#; -z }
+#SF
+#. Created: DKC 
+#. $Revision: 1.20.2.1.2.6 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_centre", '$Revision: 1.20.2.1.2.6 $');
+
+require silico_split;
+
+my $origin =  make_flag('origin', 'origin', "Move molecule to origin");
+my $largest = make_flag('l', 'largest-fragment', "Centre based on each molecule's largest fragment");
+
+# Geometry flags
+my $cellx =      	 make_flag('x', undef, 'box x', 1, undef, undef, 'DECIMAL > 0');
+my $celly =      	 make_flag('y', undef, 'box y', 1, undef, undef, 'DECIMAL > 0');
+my $cellz =      	 make_flag('z', undef, 'box z', 1, undef, undef, 'DECIMAL > 0');
+
+my $mode1 = 'cell';
+$mode1 = 'origin' if $origin;
+
+my $mode2 = 'all';
+$mode2 = 'largest' if $largest;
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('ctr');
+
+
+foreach my $arg (@arguments) {
+	
+	my $mol;
+	my $fr_in;
+	my $fr_out;
+	
+	print "File: $arg\n" if (!get_flag('quiet', 'l'));
+	
+	while ($mol = read_mol_single($fr_in, $arg)) {
+	
+		if ($cellx || $celly || $cellz) {
+		
+			#molecule_printout($mol);
+			$mol->{CELL}[0] = $cellx || $mol->{CELL}[0];
+			$mol->{CELL}[1] = $celly || $mol->{CELL}[1];
+			$mol->{CELL}[2] = $cellz || $mol->{CELL}[2];
+			
+			$mol->{CELL_ALPHA} = $mol->{CELL_BETA} = $mol->{CELL_GAMMA} = 90;
+		}
+	
+		if (!$origin and !defined $cellx) {
+	
+			print "\nMolecule cell is not defined. Can not centre molecule. Try using the -origin flag";
+			calc_box_size($mol, $cellx, $celly, $cellz, 0, 15);
+		}
+                       
+		molecule_trans_to_centre($mol, $mode1, $mode2);
+		
+		write_mol_single($fr_out, $mol);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

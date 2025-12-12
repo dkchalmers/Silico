@@ -1,0 +1,186 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! checkbox
+#? Test to see if molecule(s) is (are) inside the box defined by box.pdb
+#. Use: checkbox <ligandfile> -b<boxfile>
+#. Used for programs like DOCK which do not always dock a molecule INSIDE
+#  the specified box. The default (Dock format) box is 'box.pdb'. 'Good' structures
+#  are written to <filebase>_ibox>.fmt and structures with atoms outside the box
+#  are written to <filebase>_obox.fmt
+#. Flags:
+#; -ih Ignore hydrogen atoms
+#; -b box location (default box.pdb)
+#; -force Force overwriting of output files
+#SF
+#. $Revision: 1.17.2.1.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $atom;
+my $bad;
+my $box;
+my $box_location;
+my $error;
+my $ext;
+my $filebase;
+my $force;
+my $good;
+my $ignoreh;
+my ($maxx, $maxy, $maxz);
+my ($minx, $miny, $minz);
+my $mol;
+my $molcount;
+my $mols;
+my $oformat;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("checkbox", '$Revision: 1.17.2.1.2.2 $');
+
+$box_location = make_flag('b', undef,  'Name of box.pdb file', 0,  'box.pdb');
+$ignoreh = 	make_flag('ih', undef,  'Do not check hydrogen atoms');
+$force = 	make_flag('force', undef,  'Force overwriting of output files');
+
+@arguments = get_arguments2('>=1');
+
+silico_msg('c', "Reading box file $box_location\n");
+$box = read_pdb($box_location);
+
+if (!defined $box) {
+	mol_read_error($box_location, 1);
+}
+
+($maxx, $maxy, $maxz, $minx, $miny, $minz, undef, undef, undef) = molecule_centre($box->[0]);
+
+foreach $arg (@arguments) {
+	
+	undef $bad;
+	undef $ext;
+	undef $filebase;
+	undef $good;
+	undef $molcount;
+	undef $mols;
+	undef $oformat;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$filebase = get_filebase($arg);
+	$ext = get_fileext($arg);
+	
+	$mols = read_mol_any ($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+		
+	$oformat = get_sflag('o') || $mols->[0]{SOURCE_FILE_TYPE} || 'mol2';
+	
+	if (!$force && (-e "$filebase.obox.$oformat" || -e "$filebase.ibox.$oformat")) {
+		print "Output file exists. Skipping. Use -force to overwrite\n";
+		next;
+	}
+		
+	$molcount = 0;
+	foreach $mol (@$mols) {
+		
+		++$molcount;
+		
+		undef $error;
+		$error = 0;
+		
+		foreach $atom (atoms($mol)) {
+		
+			next if ($ignoreh && $atom->{ELEMENT} eq 'H') ;
+						
+			++$error if $atom->{X} > $maxx;
+			++$error if $atom->{X} < $minx;
+			++$error if $atom->{Y} > $maxy;
+			++$error if $atom->{Y} < $miny;
+			++$error if $atom->{Z} > $maxz;
+			++$error if $atom->{Z} < $minz;
+		}
+		
+		if ($error) {
+			silico_msg('w', "Molecule $molcount in file $arg has $error atoms outside the box!\n");
+			push @$bad, $mol;
+		} else {
+			push @$good, $mol;
+		}
+	}
+	
+	if (defined $bad) {
+		silico_msg('c', "Found ".($#{$bad}+1)." molecules with atoms lying outside the box\n");
+		write_mol_any($bad, "$filebase.obox", $oformat)
+	}
+	
+	if (defined $good) {
+		write_mol_any($good, "$filebase.ibox", $oformat);
+	}	
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

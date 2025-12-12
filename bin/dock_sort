@@ -1,0 +1,2027 @@
+#!/usr/bin/perl -w
+#!/apps/linux/bin/perl -d:DProf -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! dock_sort
+#? Cluster and sort Glide, ICM, Vina or Gold docking results according to their fitness value (Glide 
+#  gscoree, ICM Score or Gold fitness or liagnd efficiency)
+#. Processing steps:
+#, Read docking output
+#.
+#, Discard molecules that have low tautomer probablility as determined by ligprep.
+#  The threshold is determined by the -tp flag
+#.
+#, Simplify the molecule name (for Gold output)
+#.
+#, Calculate the SMILES string and uses this to sort atoms into a canonical order
+#.
+#, Identify multiple poses of a the same molecule using a canonical SMILES string (unless
+#  the -name flag is used,  then the molecule name is used)
+#.
+#, Cluster molecule using an RMS threshold (default 1 Angstrom)
+#. 
+#, Sort molecule atoms using a SMILES string to improve the superimposition of molecules 
+#  that come from different sources and have different atom ordering
+#.
+#, Keep only the best pose of each ligand (if -best option is used)
+#.
+#, Calculate ligand efficiency
+#.
+#, Sort molecules by docking score
+#.
+#, Calculate enrichment curve and, if decoys have been used, a ROC (receiver
+#  operating characteristic) curve.  The -decoy option can be 
+#  used to specify a string used in the compound name to identify decoy compounds
+#. 
+#. Use:
+#. dock_sort glide_pv.maegz -o sdf -best
+#. Sort docking output files by energy. Options to retain only the single best pose of each compound (identified by SMILES string).
+#. Processes output from Glide, Gold, ICM and Autodock Vina. Autodock Vina output should be converted to .sdf format first.
+#  Using pdbqt files directly results in loss of atomuc element information.
+#. dock_sort glide_pv.maegz -o sdf -best -name
+#. As above but instead compounds are identified by name. 
+#F
+#!3 Scoring
+#; -f_<string> String containing fitness value (eg glide_score or Gold.Goldscore.Fitness). Standard Glide and Gold
+#   scoring is handled automatically
+#; -ligeff  Sort by ligand efficiency 
+#; -effm   Efficiency calculation method. le = score/natoms, r2 = score/sqrt(natoms)RAng  
+
+#!3 Retaining molecules
+#; -best Retain only single best scoring pose of each compound
+#; -t_<value> Rms cluster threshold (default 1 Ang)
+
+#; -smin_<value> Minimum value for fitness score
+#; -smax_<value> Maximum value for fitness score
+#; -lemin_<value> Minimum value for score/HA
+#; -lemax_<value> Maximum value for score/HA
+#; -mwmin_<value> Minimum MW
+#; -mwmin_<value> Maximum MW
+#; -pct_<value> Percentage of molecules to retain after ranking
+#; -n_<value> Number of molecules to retain after ranking
+#; -nd_<value> Number of molecules to retain after ranking in 'divide' directory
+#; -tp_<value> Minimum acceptable probability for tautomers from Ligprep
+
+#!3 Compound identification
+#; -name Identify molecules by molecule name (otherwise SMILES is used)
+#; -nosmiles Speed things up by skipping SMILES generation (uses identify-by-name)
+#; -cmax_<value> Maximum cutoff value (useful for Gold Fitness)
+#; -cmin_<value> Minimum cutoff value (useful for Glide Score)
+#; -tp_<value> Minimum acceptable probability for tautomers from ligprep
+
+#!3 Contacts and H-bonds
+#; -c_<string1_string2_...> Only keep ligands that contact these atoms. String format chain:resnum:aname[:functional-group_atom-element]
+#  Use quotes around multiple strings. Functional groups are defined by subroutine mol_label_functional_group(). E.g., AROMATIC_C, CARBONYL_O, S_AMIDE_N.  Use the 
+#  program 'mol_label_fg' to find functional groups present in a molecules. 
+#; -cd_<value> Contact atom distance cutoff (Angstroms). Default 4 Ang
+#; -ci Invert contact so that ligands contacting atoms are discarded
+#; -hb Identify protein-ligand hydrogen bonds
+#; -hbmin_<num> Filter output based on minimum <num> of protein-ligand hydrogen bonds
+#; -prot_<filename> Protein file (if not available from docking output)
+
+#!3 Compound identification
+#; -name Identify molecules by molecule name. Otherwise, compounds are identified by SMILES.
+#  Note that SMILES identification currently does not encode stereochemistry
+
+#!3 Ignoring compounds
+#; -ignore_<string> Ignore compounds that start with this name.  They will not be included as decoys or actives.  Multiple
+#  compound names can be included by separating with spaces and surrounding with quotes. Eg -ignore "alpha beta gamma"
+#  will ignore all names starting with alpha, beta or gamma
+#; -ignores_<"smiles_smiles_..."> Ignore compounds with specified SMILES.  They will not be included as decoys or actives.  Multiple
+#  compounds can be included as for -ignore
+
+#!3 Decoys and Actives
+#.
+#. ** Not tested lately. Probably does not work **
+#.
+#; -decoy_<string>     String to identify decoy compounds.  Should be present in the names of decoy compounds
+#; -afile_<name>  File containing list of active compounds, one per line
+#; -nactive_<int> Total number of actives in the docked library
+#; -ndecoy_<int> Total number of decoys in the docked library
+#; -act_<field> Calculate correlation coefficents for this activity field in SDF data
+
+#!3 Other analysis
+#; -hist Make histogram files for score and ligeff values
+
+#!3 Output
+#; -obase_<base> Base name for output files and directories
+#; -divide Write individual files to a new output directory
+#; -force Overwrite existing output directory for -divide option
+#; -term_<format> Gnuplot output format [postscript, png] (default postscript)
+#; -rename_<field> Rename output molecules using SDF field
+
+#. $Revision: 1.26.2.5.2.28 $
+#>
+
+use strict;
+package Silico;
+use Scalar::Util qw(looks_like_number);
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+my $sort_ascending = 0;      # Global
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_hydrogens;
+
+print_title("dock_sort", '$Revision: 1.26.2.5.2.28 $');
+
+# Scoring
+        	make_flag('f', 'fitness-string', 'Docking score field', 1);
+my $ligeff  = 	make_flag('ligeff', 'sort-by-ligand-efficiency', "Sort by ligand efficiency");
+my $ligeff_method = make_flag('effm', 'efficiency-method', "Ligand efficiency calculation method (le , r2)", 1, 'le');
+my $pareto  = 	make_flag('pareto', 'pareto-rank', "Sort by Pareto rank");
+	
+# Retaining molecules
+my $best = 	make_flag('best',  'single-best', 'Retain only single best structure');
+my $t = 	make_flag('t',     'threshold', 'Cluster threshold', 1 , 1, undef, undef, "DECIMAL > 0");	
+my $smin = 	make_flag('smin',  'score-cutoff-min', 'Minimum value for fitness score', 1, undef, undef, "DECIMAL");
+my $smax = 	make_flag('smax',  'score-cutoff-max', 'Maximum value for fitness score', 1, undef, undef, "DECIMAL");
+my $lemin = 	make_flag('lemin', 'ligeff-cutoff-min', 'Minimum value ligeff score', 1, undef, undef, "DECIMAL");
+my $lemax = 	make_flag('lemax', 'ligeff-cutoff-max', 'Maximum value ligeff score', 1, undef, undef, "DECIMAL");
+my $mw_min = 	make_flag('mwmin', 'mw-min',  'MW minimum', 1,  undef, undef, "DECIMAL > 0");
+my $mw_max = 	make_flag('mwmax', 'mw-max',  'MW maximum', 1,  undef, undef, "DECIMAL > 0");
+my $pct = 	make_flag('pct',   'keep-pct', 'Retain only the top <pct> percent of structures)', 1, undef, undef, "INTEGER > 0");
+my $keep = 	make_flag('n',     'keep-number', 'Number of structures to retain', 1, undef, undef, "INTEGER > 0");
+my $keep_divide = make_flag('nd',  'keep-divide', 'Number of structures to retain in divide directory', 1, undef, undef, "INTEGER > 0");
+my $tp = 	make_flag('tp',    'min-tautomer-probability', 'Minimum acceptable probability for tautomers from ligprep', 1, 0.4, undef, "DECIMAL > 0");
+
+# Contacts and h-bonds
+my $contact_atom = make_flag('c',   'contact-atom', "Only keep ligands that contact these atoms. Format chain:resnum:aname[:functional-group]", 1);
+		make_flag('cd',     'contact-dist', "Contact atom distance cutoff (Angstroms)", 1, 4, undef, undef, "DECIMAL > 0");
+		make_flag('ci',     'invert-contact', "Invert contact so that ligands contacting atom are discarded");
+my $hb = 	make_flag('hb',     'hydrogen-bonds', "Identify hydrogen bonds between ligands and receptors");
+my $hbmin =     make_flag('hbmin',  'hydrogen-bonds-min', "Minimum number of hydrogen bonds to receptor", 1,  undef, undef, "INTEGER >= 0");
+my $protfile =  make_flag('prot',   'protein-file', "Protein file", 1,  undef, undef, "FILENAME");
+
+# Compound identification
+my $identify_by_name = make_flag('name', 'identify-by-molname', 'Identify molecules by molecule name (otherwise by SMILES)');
+my $fv = 	make_flag('fv', 'fill-valence', 'Fill all valences with hydrogen when identifying with SMILES)');
+
+# Ignoring compounds
+my $ignore = 	make_flag('ignore', 'ignore-name', "Ignore compounds with names starting with this string", 1);
+my $ignores = 	make_flag('ignores','ignore-smiles', "SMILES to identify compounds to be ignored", 1);
+
+# Decoys and actives
+my $d_str = 	make_flag('decoy',  'decoy-string', "String to identify decoy componds", 1);
+           	make_flag('afile',  'active-file', "File containing list of active compounds, one per line", 1, undef, undef, "FILENAME");
+		make_flag('nactive', 'num_actives', 'Total number of actives in the docked library', 1, undef, undef, "INTEGER > 0");
+		make_flag('ndecoy', 'num_decoys', 'Total number of decoys in the docked library', 1, undef, undef, "INTEGER > 0");
+my $noroc =  	make_flag('noroc',  'noroc', 'Do not calculate ROC curves');
+
+#  Other analysis 
+my $act = 	make_flag('a',      'activity', "Calculate correlation coefficents for this activity field in SDF data\n", 1);
+my $hist = 	make_flag('hist',  'histogram', "Make histogram files for score and ligeff values");
+
+# Output handling
+my $obase =     make_flag('obase',  'output-base-name', "Base name for output files and directories", 1);
+my $divide = 	make_flag('divide', 'divide', 'Write individual files to a new output directory');
+my $force = 	make_flag('force',  'force', 'Overwrite existing output directory for -divide option');
+		make_flag('term',   'gnuplot-format', "Gnuplot output format [postscript, png] (default postscript)", 1);
+my $rename =    make_flag('ren',    'rename', "Rename output molecules using SDF field", 1, 'MFCD');		
+
+silico_msg('d', "Incompatible options -name and -ignores") if  $identify_by_name && $ignores;
+silico_msg('d', "Unknown ligand efficiencey calculation method '$ligeff_method'\n") if ($ligeff_method ne 'le' && $ligeff_method ne 'r2');
+
+my $le_head = sprintf "%7s", "Eff($ligeff_method)";
+
+
+if ($keep && $pct) {
+	silico_msg('w', "Option '-pct' overrides option '-n'\n");
+	undef $keep;
+}
+
+
+my @arguments = get_arguments2('>=1');
+
+my @ignore_list;
+if ($ignore) {
+
+	@ignore_list = split " ", $ignore;
+	print "Ignoring compounds starting with: ";
+	foreach (@ignore_list) {
+		print "'$_' ";
+	}
+	print "\n";	
+}
+my @ignores_list;
+if ($ignores) {
+
+	my @ignores_list = split " ", $ignores;
+	print "Ignoring compounds with SMILES: ";
+	foreach (@ignores_list) {
+		print "'$_' ";
+	}
+	print "\n";	
+}
+
+my $flag = 0;
+
+my $grand_discard;
+my $keyhash;
+my $ligeff_string;
+my $pareto_string = "Pareto_rank";
+my $molhash;
+my $moltotal = 0;
+my $namel = 25; 
+my $retain = 0;
+my $retaintotal = 0;
+my $rename_flag = 0;
+my $struct_count = 0;
+my $score_string;
+my $taut_key;
+
+# Histograms
+my $raw_scores;
+my $raw_ligeffs;
+
+my $prot;
+if (defined $protfile) {
+	my $mols = read_mol_any($protfile);
+	$prot = $mols->[0];
+	molecule_check_and_fix_connectivity($prot);
+	
+	my $h = mol_has_h($prot, 1);
+	
+	if ($h <= 0) {
+		silico_msg('n', "Adding hydrogens to protein\n");
+		mol_add_hydrogens($prot);
+		write_pdb($prot, "protein_h.pdb");
+	}
+	
+	#molecule_printout($prot);
+}
+
+foreach my $arg (@arguments) {
+	
+	print heading("File: $arg\n");
+
+	my $catoms;
+	my $discard;
+	my $fr_in;
+	my $molcount = 0;
+	my $tautomer_probability;
+	
+	MOL: while (my $mol = read_mol_single($fr_in, $arg)) {
+	
+		last if !defined $mol->{NUMATOMS}; 
+		
+		++$molcount;
+		
+		# Parent protein
+		if ($mol->{NUMATOMS} > 200) {
+		
+			print "\n";
+			silico_msg("c", "Found new large (protein) molecule: ".($mol->{NAME}||'Unknown')."\n");
+			
+			if ($protfile) {
+				silico_msg('w', "Using protein from file $protfile, not from poseviewer file\n");
+			} else { 
+				$prot = $mol;
+			}
+		
+			if ($contact_atom) {
+				$catoms = get_contact_atoms($prot, $contact_atom);
+			}
+			
+			next;
+		}
+	
+		# Get field information from first non-protein molecule file
+		if ($flag == 0) {
+			
+			$flag = 1;
+			$tautomer_probability = tautomer_probability_field($mol);
+			($score_string, $ligeff_string, $sort_ascending) = get_fitness_strings($mol);
+			
+		
+			
+			print (heading("New/Exist  Num   Score  $le_head Name                      SMILES                  .\n"));
+		}
+
+		#
+		# Discard things
+		#
+		
+		# Process Meeko output
+		if ($mol->{SDF_DATA}{meeko}) {
+			
+			my $s = $mol->{SDF_DATA}{meeko};
+			$s =~ s/,//g;
+			my @f = split " ", $s;
+			$mol->{SDF_DATA}{free_energy} = $f[3];
+			$mol->{SDF_DATA}{intermolecular_energy} = $f[5];
+			$mol->{SDF_DATA}{internal_energy} = $f[7];
+		}
+		
+		# Missing score
+		if (!defined $mol->{SDF_DATA}{$score_string}) {
+			silico_msg('w', "The field $score_string is not defined for molecule $molcount.  Skipping\n");
+			++$discard->{Error};
+			next;
+		}
+		
+		my $numheavy;
+		if ($hist) {
+		
+			# Calcluate numheavy here if generating histograms
+			# otherwise calculate it later when it is needed
+			$numheavy = mol_count_heavy_atoms($mol);
+			push @$raw_scores, $mol->{SDF_DATA}{$score_string};
+			push @$raw_ligeffs, $mol->{SDF_DATA}{$score_string}/$numheavy;
+		}
+			
+		# Molecular weight
+		if ($mw_min && $mol->{MW} < $mw_min) {
+			$mol->{MW}  =  sprintf "%8.3f", molecule_mw($mol, undef, undef, 1);
+			silico_msg('d', "Molecular weight not defined for molecule $molcount\n") if !defined $mol->{MW};
+			silico_msg('c', "$molcount\tMolecule $molcount is too light. MW: $mol->{MW} < $mw_min. Discarding.\n");
+			++$discard->{"MW low"};
+			next;
+		}
+		if ($mw_max && $mol->{MW} > $mw_max) {
+			$mol->{MW}  ||=  sprintf "%8.3f", molecule_mw($mol, undef, undef, 1);
+			silico_msg('d', "Molecular weight not defined for molecule $molcount\n") if !defined $mol->{MW};
+			silico_msg('c', "$molcount\tMolecule $molcount is too heavy. MW: $mol->{MW} > $mw_max. Discarding.\n");
+			++$discard->{"MW high"};
+			next;
+		}
+		
+		# Close contact
+		if ($prot->{FIND_LIGAND_FUNCTIONAL_GROUPS}) {
+			#mol_label_heterocycles($mol, 6, "");
+			mol_label_functional_group($mol);
+			#molecule_printout($mol);
+			#die;
+		}
+		if ($catoms && !close_contact($mol, $catoms)) {
+			++$discard->{"No contact"};
+			next;
+		}
+		
+		if ($tp) {
+			undef $taut_key;
+			foreach (keys %{$mol->{SDF_DATA}}) {
+				if (/tautomer.probability/) {
+					$taut_key = $_;
+					chomp $taut_key;
+					last;
+				}
+			}
+
+			if ($taut_key && defined $mol->{SDF_DATA}{$taut_key} && looks_like_number($taut_key) && ($mol->{SDF_DATA}{$taut_key} < $tp)) {
+				#silico_msg('c', "Low tautomer probability for molecule $molcount: $mol->{SDF_DATA}{$taut_key}.  Skipping\n");
+				++$discard->{"Tautomer probability low"};
+				next;
+			}
+		}
+		
+		$numheavy = mol_count_heavy_atoms($mol) if !$numheavy;
+		
+		$mol->{SCORE} = $mol->{SDF_DATA}{$score_string};
+		if ($ligeff_method eq 'le') {
+			$mol->{LIGEFF} = $mol->{SCORE}/$numheavy;
+		} elsif ($ligeff_method eq 'r2') {
+			$mol->{LIGEFF} = $mol->{SCORE}/sqrt($numheavy);
+		} 
+		$mol->{SDF_DATA}{$ligeff_string} = $mol->{LIGEFF};
+		$mol->{SDF_DATA}{HeavyAtoms} = $numheavy;
+		
+		if (defined $smin && $mol->{SCORE} < $smin) {
+			++$discard->{"Score below range"};
+			next;
+		}
+		
+		if (defined $smax && $mol->{SCORE} > $smax) {
+			++$discard->{"Score above range"};
+			next;
+		}
+		
+		if (defined $lemin && $mol->{LIGEFF} < $lemin) {
+			++$discard->{"Ligand efficiency below range"};
+			next;
+		}
+		
+		if (defined $lemax && $mol->{LIGEFF} > $lemax) {
+			++$discard->{"Ligand efficiency above range"};
+			next;
+		}
+		
+		#
+		# Structure filtering
+		#
+		
+		if (!$identify_by_name) {
+			
+			# Calculate smiles and use this to sort atoms in a canonical way
+			
+			my $smol;
+			if ($fv) {
+				$smol = deep_copy($mol);
+				
+				mol_del_hydrogens($smol);
+				
+				# Remove charges
+				foreach my $atom (atoms($smol)) {
+					delete $atom->{CHARGE};
+				}
+				
+				# Add hydrogens without calculating protonation state
+				my @n = mol_add_hydrogens($smol, 1);
+				
+				#print "n @n\n";
+				
+			} else {
+				$smol = $mol;
+			}
+			
+			mol_sort_smiles($smol);
+			
+			$mol->{SDF_DATA}{smiles} = mol_smiles_string($smol);		
+			$mol->{SMILES} = $smol->{SMILES};
+	
+		
+			if (defined $ignores) {
+				foreach (@ignore_list) {
+					next if  $mol->{SMILES} eq $_;
+					silico_msg('c', "Molecule SMILES is $_.  Skipping\n");
+					next MOL;
+				}
+			}
+		}
+		
+		
+		if (defined $ignore) {
+			foreach (@ignore_list) {
+				next if  $mol->{NAME} !~ /^$_/;
+				silico_msg('c', "Molecule name starts with string $ignore.  Skipping\n");
+				++$discard->{"Ignore"};
+				next MOL;
+			}
+		}
+
+		# Find hydrogen bonds
+		
+		find_hbonds($mol, $prot) if ($hb || $hbmin);
+		
+		if ($hbmin && $mol->{SDF_DATA}{Num_HB} < $hbmin) {
+			++$discard->{"Num HB low"};
+			next;
+		}
+
+		# Clean up name
+		my ($molname, $namebase) = process_name($mol);
+		
+		my $key = get_key($mol, $namebase);
+		++$keyhash->{$key};
+		
+		# Retain only best structure
+		my $s = '';
+		if ($best) {
+		
+			if (!defined $molhash->{$key}[0]) {
+				
+				$molhash->{$key}[0] = $mol;
+				$s = "New";
+			} else {
+			
+				my $better = $mol->{SDF_DATA}{$score_string} < $molhash->{$key}[0]{SDF_DATA}{$score_string};
+				$better = !$better if $sort_ascending;
+			
+				if ($better) {
+					$molhash->{$key}[0] = $mol;
+					$s = "Exist";
+				} else {
+			
+					printf "Score %6.2f.  A better scoring pose is already present ($molhash->{$key}[0]{SDF_DATA}{$score_string}).  Skipping\n", $mol->{SDF_DATA}{$score_string};
+					++$discard->{"Best"};
+					next MOL;
+				}
+			}
+			
+		} else {
+		
+			if (!defined $molhash->{$key}[0]) {
+				
+				$molhash->{$key}[0] = $mol;
+				$s = "New";
+			} else {
+				$s = "Exist";
+			}
+		
+			# Retain all structures
+			push @{$molhash->{$key}}, $mol;
+		}
+		
+		++$retain;
+		
+		my $l = length($molname);
+		$namel = $l if $l > $namel;
+		
+		printf "%5s %5d  %6.2f  %6.2f  %-$namel"."s %-20s\n", $s, $keyhash->{$key}, $mol->{SCORE}, $mol->{LIGEFF}, $molname, ($mol->{SMILES} || '');
+	}
+	
+	$moltotal += $molcount;
+	$retaintotal += $retain;
+	
+	print "\n# Read $molcount structures\n";
+	foreach my $key (sort(keys %$discard)) {
+		printf "# Discarded - $key: $discard->{$key}\n";
+		$grand_discard->{$key} += $discard->{$key};
+	}
+	
+	print "# Retained $retain molecules\n";
+}
+
+if ($pct) {
+	my $frac = $moltotal*$pct/100;
+	$keep = int($frac);
+	print "\nRetaining $pct percent of structures.  This is $keep molecules\n";
+	if ($keep == 0) {
+		silico_msg('w', "Stopping because we are not retaining any molecules\n") if $keep == 0;
+		exit;
+	}
+}
+
+silico_msg('e', "No molecules retained after initial processing\n") if $retaintotal == 0;
+
+# Only one hash used - allow for flexibility later
+foreach my $hash ($molhash) {
+	
+	if ($best) {
+	    	print "Retaining only single best pose of each structure\n";
+
+	} else {  
+	
+		print "Clustering molecules\n";
+
+		# Cluster each molecule
+		foreach (keys %$hash) {
+
+			print "\n\nSet: $_ contains ".($#{$hash->{$_}}+1)." molecules\n";
+			$hash->{$_} = ensemble_cluster($hash->{$_}, $t);	
+		}
+	}
+	
+	# Make new ensemble
+	my $count = 0;
+	my $newmols;
+	LOOP: foreach my $key (keys(%$hash)) {
+
+	    ++$count;
+	    foreach my $mol (@{$hash->{$key}}) {
+		    push @$newmols, $mol;
+	    }
+	}
+
+	if (!defined $newmols->[0]) {
+		silico_msg ('w', "No molecules read in molecule\n");
+		next;
+	}
+
+	rank_molecules ($newmols, $score_string);
+	rank_molecules ($newmols, $ligeff_string);
+
+	my $minvars;
+	my $maxvars;
+	push @$minvars, $ligeff_string, $score_string,;
+	@$maxvars = ();
+	select_pareto_front($newmols, $minvars, $maxvars, 0, $pareto_string,1);
+	rank_molecules ($newmols, $pareto_string);
+	
+	# Modify names
+	foreach my $mol (@$newmols) {
+	
+		# Strip old score strings from name
+		$mol->{NAME} =~ s/\s*\|.*//;
+
+		# Add scores to name
+		$mol->{NAME} .= " |";
+		$mol->{NAME} .= " ".(sprintf "%d", $mol->{SDF_DATA}{$pareto_string}) if $pareto;
+		$mol->{NAME} .= " ".(sprintf "%.2f", $mol->{SCORE});
+		$mol->{NAME} .= " ".(sprintf "%.2f", $mol->{LIGEFF});
+	}
+	
+	#calculate_roc_curves($newmols, $filebase, $act, $score_string) if !$noroc;
+	
+	my $filebase = get_filebase_short($arguments[0]);
+	
+	$filebase = $obase if $obase;
+	
+	my $oformat = get_sflag('o') || 'sdf';
+	
+	my @list = ($score_string);
+	push @list, $ligeff_string if $ligeff;
+	push @list, $pareto_string, if $pareto;
+	
+	foreach my $sort_string (@list) {
+	
+		die if !defined $newmols->[0]{SDF_DATA}{$sort_string};
+		
+		# Generate output filename that describes the processing (but not if we have specified the output name)
+		my $string = 'dsort';
+		$string .= '_best' if $best;
+		$string .= '_ligeff' if $sort_string =~ 'ligeff';
+		$string .= '_pareto' if $sort_string =~ 'Pareto';
+		
+		my $filebase2 = $filebase."_".$string;
+		
+		if (get_flag('output-file-name', 'l')) {
+			set_default_oappend(' '); # No append
+		} else {
+			set_default_oappend($string);
+		}
+	
+		# Sort all molecules for output
+		if ($sort_ascending) {
+			@$newmols = sort {$b->{SDF_DATA}{$sort_string} <=> $a->{SDF_DATA}{$sort_string}} @$newmols;
+		} else {
+			@$newmols = sort {$a->{SDF_DATA}{$sort_string} <=> $b->{SDF_DATA}{$sort_string}} @$newmols;
+		}
+		
+		open (OUTFILE, ">$filebase2.txt") || silico_msg("d", "Could not open output file $filebase.txt for writing\n");
+		
+		my $i = 0;
+		foreach my $fh (*STDOUT, *OUTFILE) {
+			print_results($newmols, $fh, $sort_string, $i);
+			++$i;
+		}
+		
+		close (OUTFILE);
+		
+		write_mol_any($newmols, $filebase2, $oformat, '');
+		
+		# Divide output into directories
+		if ($divide) {
+			divide($newmols, $filebase2, $obase, $oformat, $keep_divide);
+		} 
+	}
+
+	# Make histograms
+	if ($hist) {
+		print (heading("Writing histogram data\n"));
+		make_hist($raw_scores,  "Score", $filebase, 0.2, -15, 0);
+		make_hist($raw_ligeffs, $le_head, $filebase, 0.01, -1, 0);
+	}	
+}
+
+print_finished_message();
+print_timing_message($starttime, );
+
+#################
+# End of script #
+#################
+
+		
+
+
+
+###############
+# Subroutines #
+###############
+
+sub get_key {
+
+	#<
+	#? Find if molecule already exists using molecule name or smiles string
+	#>
+	
+	my $mol = $_[0];
+	my $namebase = $_[1];
+
+	my $key;
+	if ($identify_by_name) {
+		
+		# Identify molecules using molecule name
+		$key = $namebase;
+	} else {
+
+		# Identify molecules using SMILES string
+		$key = $mol->{SMILES};
+	}
+
+	return $key;
+}
+
+sub find_hbonds {
+
+	#<
+	#? Find hydrogen bonds between ligand and receptor
+	#  and add to SDF_DATA
+	#; Requires: molecule, protein
+	#; Returns: number of HBonds found
+	#; Sets: mol ->{SDF_DATA}{Num_HB} mol->{SDF_DATA}{HBonds}
+	#>
+
+	my $mol = $_[0];
+	my $prot = $_[1]; # prot
+	
+	silico_msg('d', "Hydrogen bonds can not be calculated without a protein file. Use the -prot option to provide protein file.\n") if !defined $prot;
+	
+	#Each HB record contains (dmol, datom, hydrogen, amol, aatom)
+	my $hblist = find_intermolecular_hbonds_h($mol, $prot);
+	
+	$mol->{SDF_DATA}{HBonds} = '';
+	$mol->{SDF_DATA}{Num_HB} = 0;
+	
+	foreach $hb (@$hblist) {
+		my $datom = $hb->[1];
+		my $hatom = $hb->[2];
+		my $aatom = $hb->[4];
+		
+		++$mol->{SDF_DATA}{Num_HB};
+		
+		# Make label string
+		my $string;
+		foreach my $atom ($datom, $hatom, $aatom) {
+		
+			foreach (qw(NAME SUBNAME SUBID CHAIN)) {
+			
+				my $v = $atom->{$_};
+				$v ||= 'X';
+				$v =~ s/ //g;
+				$string .= "$v ";
+			}
+			$string .= "| ";
+		} 
+		chop($string); chop($string);
+		$string .= "\n";
+		$mol->{SDF_DATA}{HBonds} .= $string;
+	}
+	
+	# Remove last carriage return
+	chop($mol->{SDF_DATA}{HBonds});
+	
+	return $mol->{SDF_DATA}{Num_HB};
+}
+
+sub process_name {
+
+	#<
+	#? Clean up molecule name
+	#; Requires: Molecule
+	#; Returns: molecule name, base name
+	#>
+
+	my $mol = $_[0];
+
+	# Rename molecule if flag set
+	if ($rename  && defined $mol->{SDF_DATA}{$rename}) {
+		$mol->{NAME} = $mol->{SDF_DATA}{$rename};
+		$rename_flag = 1;
+	}
+
+	# Clean up Gold name
+	# Gold output names are of the form: all5_009|all5_ren_cl|sdf|9|dock3
+
+	my @f = split /\|/, $mol->{NAME};
+	my $namebase = $f[0];
+	my $molname = $f[0];
+	$molname .= "_".$f[3] if $f[3];
+
+	return ($molname, $namebase);
+}
+
+
+sub make_hist {
+
+	#<
+	#? Make a histogram of data and write to a a file
+	#; Requires: data, key to graph, filebase, binsize, binmin, binmax
+	#; Writes: delimited text file
+	#>
+
+	my $data = $_[0] || croak();
+	my $key = $_[1] || croak();
+	my $filebase = $_[2] || croak();
+	my $binsize = $_[3] || croak();
+	my $binmin = $_[4];
+	my $binmax = $_[5];
+	
+	$binmin = 0 if !defined $binmin;
+	$binmax = 100 if !defined $binmax;
+	
+	require silico_tabledata;
+	
+	my $bins = make_bins($binsize, $binmin, $binmax);
+
+	foreach (@$data) {
+	
+		bin_values($_, $key, $bins);
+	}
+	
+	my $outfile = "$filebase\_hist_$key.txt";
+	
+	write_binfile($outfile, $bins);
+}
+
+sub close_contact {
+
+	#<
+	#? Find if ligand makes a close contact with one or more protein atoms
+	#; Requires: molecule, array of contat atoms.
+	#: Returns: true or false
+	#: Flags: 'cd' cutoff distance, 'ci' invert logic
+	#>
+
+	my $mol      = $_[0];
+	my $catoms   = $_[1];
+	my $cutoff ||= get_sflag('cd') || 4;
+	my $invert   = get_sflag('ci');
+	
+	my $ret = 1;
+	
+	silico_msg('d', "No close contact atoms. Has a protein file been provided?") if !defined $catoms;
+	
+	# Loop over protein atoms
+	foreach my $catom (@$catoms) {
+	
+		my $x = $catom->{X};
+		my $y = $catom->{Y};
+		my $z = $catom->{Z};
+	
+		my $best = 999999;
+	
+		# Loop over ligand atoms
+		foreach my $atom (atoms($mol)) {
+	
+			next if $atom->{ELEMENT} eq 'H';
+			
+			# Contact functional groups
+			my $fg = $catom->{MUST_CONTACT};
+	
+			#my @g = keys(%{$atom->{FG}});
+			#print "fg: $fg lig: @g\n";
+			
+			if ($fg) {
+				next if !$atom->{FG}{$fg};
+			}
+		
+			my $d =  distance ($atom, $catom);
+			$best = $d if $d < $best;
+		}
+	
+		#printf "Closest HA contact with protein atom: $contact_atom. Closest = %.1f Ang\n", $best;
+	
+		my $contact = $best <= $cutoff;
+		$ret = 0 if !$contact;
+		
+		push @{$mol->{CONTACTS}}, $contact;
+	}
+	
+	$ret = !$ret if $invert;
+	return $ret;
+}
+
+sub get_contact_atoms {
+
+	my $mol = $_[0];
+	my $contact_atoms = $_[1];
+	
+	my @f = split " ", $contact_atoms;
+	
+	my $catoms = ();
+	
+	CATOM: foreach my $contact_atom (@f) {
+	
+		my ($cchain, $cres, $cname, $fg) = split ":", $contact_atom;
+		$cchain ||= 'A';
+		$cres   ||= '1';
+		$cname  ||= 'CA';
+		$fg  ||= '';
+	
+		print "Using contact atom ($contact_atom) -> $cchain:$cres:$cname\n";
+		if ($fg) {
+			print "Atom must make contact with ligand functional group: $fg\n";
+		}
+	
+		# Check protein atoms
+		foreach my $atom (atoms($mol)) {
+	
+			next if $atom->{CHAIN} ne $cchain;
+			next if $atom->{SUBID} != $cres;
+			my $n = $atom->{NAME};
+			$n =~ s/ //g;
+			next if $n ne $cname;
+			
+			# Set required ligand functional group if this is required
+			$atom->{MUST_CONTACT} = $fg if $fg;
+			$mol->{FIND_LIGAND_FUNCTIONAL_GROUPS} = 1; 
+			
+			push @$catoms, $atom;
+			next CATOM;	
+		}
+	
+		silico_msg('d', "Contact atom not found in protein: $mol->{NAME}\n");
+	}
+	
+	print "\n";
+	
+	return $catoms;
+}
+
+sub print_keys {
+
+	#<
+	#? Printout SDF data keys present in molecule
+	#; Requires: molecule
+	#>
+
+	my $mol = $_[0];
+
+	print (heading("Keys in data file\n"));
+	foreach (sort (keys %{$mol->{SDF_DATA}})) {
+		print "$_\n";
+	}
+}
+
+sub tautomer_probability_field {
+
+	#<
+	#? Find tautomer probability field		
+	#>
+	
+	my $mol = $_[0];
+
+	foreach (sort (keys %{$mol->{SDF_DATA}})) {
+		if (/tautomer.probability/) {
+			silico_msg('c', "\tTautomer probability field '$_'\n");
+			return $_;
+		}
+	}
+	return undef;
+}
+
+sub get_fitness_strings {
+
+	#<
+	#? 
+	#>
+	
+	my $mol = $_[0];
+
+	my $sort_ascending = 0;
+
+	if (my $f = get_lflag('fitness-string')) {
+
+		$score_string = $f;
+
+	} elsif (defined $mol->{SDF_DATA}{"Gold.Goldscore.Fitness"}) {
+	
+		silico_msg('c', "\nAnalysing data using GOLD Fitness\n\n");
+		$score_string = "Gold.Goldscore.Fitness";
+		$sort_ascending = 1;
+
+	} elsif (defined $mol->{SDF_DATA}{"glide.gscore"}) {
+	
+		silico_msg('c', "\nAnalysing data using GLIDE gscore\n\n");
+		$score_string = "glide_gscore";
+		
+	} elsif (defined $mol->{SDF_DATA}{"glide_gscore"}) {
+	
+		# Note underscore
+		silico_msg('c', "\nAnalysing data using GLIDE gscore\n\n");
+		$score_string = "glide_gscore";
+
+	} elsif (defined $mol->{SDF_DATA}{"r_i_glide_gscore"}) {
+	
+		silico_msg('c', "\nAnalysing data using GLIDE gscore\n\n");
+		$score_string = "r_i_glide_gscore";
+
+	} elsif (defined $mol->{SDF_DATA}{Score}) {
+	
+		silico_msg('c', "\nAnalysing data using 'Score' value\n\n");
+		$score_string = "Score";
+	
+	} elsif (defined $mol->{SDF_DATA}{VINA_RESULT}) {
+	
+		silico_msg('c', "\nAnalysing data 'VINA_RESULT' value\n\n");
+		$score_string = "VINA_RESULT";
+		
+	} elsif (defined $mol->{SDF_DATA}{ENERGY}) {
+	
+		silico_msg('c', "\nAnalysing data using 'ENERGY' value\n\n");
+		$score_string = "ENERGY";
+	
+	} elsif (defined $mol->{SDF_DATA}{meeko}) {
+	
+		silico_msg('c', "\nAnalysing data using 'free_energy' from Meeko\n\n");
+		$score_string = "free_energy";
+
+	} else {
+
+		print "\nError: Can not find fitness information in file. e.g. glide.gscore, Score, VINA_RESULT, ENERGY or free_energy \n";
+		print "         Check the input file and specify the field using the -f flag\n";
+		my @f = keys %{$mol->{SDF_DATA}};
+		print "\nAvailable fields: @f\n";
+		silico_msg('d');
+	}
+	
+	my $ligeff_string = $score_string.'_ligeff';
+
+	return ($score_string, $ligeff_string, $sort_ascending);
+}
+
+sub divide {
+
+	#<
+	#? Divide structures into a directory.
+	#. Should be able to replace with a library routine
+	#>
+
+	my $newmols =  $_[0];
+	my $dirname =  $_[1];
+	my $filebase = $_[2] || "mol"; 
+	my $oformat =  $_[3] || "sdf";
+	my $ms = $_[4];
+	
+       	$dirname =~ s/ /_/g; # Remove spaces etc
+       	$dirname .= ".dir";
+
+       	# Check whether a directory (or file) by that name already exists.
+       	# Unless -force has been used
+       	if (-e $dirname) {
+
+		if (!$force) {
+		       silico_msg('d', "Directory or file $dirname already exists!\n",
+			       "Use -force to overwrite.\n");
+
+	       } else {
+		       my $error = system("rm -rf $dirname") if (-d "$dirname");
+		       silico_msg('d', "Failed to remove directory $dirname!\n") if $error;
+	       }
+       	}
+	
+       	my $error = system("mkdir $dirname");
+       	silico_msg('d', "Failed to remove directory $dirname!\n") if $error;
+
+       	my $i = 1;
+       	foreach my $mol (@$newmols) {
+	       	my $oname = format_oname('fnumbered', $mol, $filebase, $i);
+	       	my $ens->[0] = $mol;
+	       	write_mol_any($ens, "$dirname/$oname", $oformat, "NOSORT QUIET");
+	       	if ($ms) {
+	       		last if $i == $ms;
+		}
+	       ++$i;
+      	}
+
+       	my @files = `ls $dirname`;
+      	my $fulldir = `pwd`;
+       	chomp $fulldir;
+
+       	open (PFILE, ">$dirname/load.pml") || silico_msg ('w', "Could not open $dirname/load.pml for writing\n");
+       	silico_msg ('c', "Writing pymol load script $dirname/load.pml\n");
+	print "\n\n";
+
+       	foreach (@files) {
+
+	       	print PFILE "load $fulldir/$dirname/$_";
+       	}
+
+       	close PFILE;
+}
+
+sub print_results {
+
+	# Printout ranked molecule list
+
+	my $mols = $_[0] || croak();
+	my $fh = $_[1] || croak();
+	my $sort_string= $_[2] || '';
+	my $flag = $_[3]; # Flag to make output suitable for reading into Excel
+	
+	my $namel = length($mols->[0]{NAME}) + 5;
+	
+	# Print header
+	if (!$flag) {
+		print $fh heading("Retained molecules - sorted by $sort_string\n");
+		print $fh "\n";
+		print $fh "# Score  = $score_string\n";
+		print $fh "# $le_head = $ligeff_string\n\n";
+	}
+	
+	# Header	
+	printf $fh "%-$namel"."s ", "#Mol_name";
+		
+	if ($pareto) {
+		printf $fh "%12s ", "Pareto.Rank";
+	}
+	
+	printf $fh "%12s %12s %12s %12s ", "Score", "Score.Rank", $le_head, "Ligeff.Rank";
+		
+	if ($act) {
+		printf $fh "%12s %12s %12s ", "Act_$act", "pAct_$act", "pAct_$act.Rank";
+	}
+	if ($rename_flag) {
+		printf $fh "%14s ", $rename;
+	}
+		
+	print $fh "Smiles" if !$identify_by_name;
+	print $fh "\n";
+		
+	my $count = 0;
+	my $count_decoy = 0;
+	foreach my $mol (@$mols) {
+	
+		my $n = $mol->{NAME};
+		$n =~ s/\s/_/g if $flag;
+	
+		printf $fh "%-$namel"."s ", $n;
+		
+		if ($pareto) {
+			printf $fh "%12d ", $mol->{SDF_DATA}{$pareto_string};
+		}
+		
+		printf $fh "%12.2f %12d %12.4f %12d ", 
+			$mol->{SDF_DATA}{$score_string},
+			$mol->{SDF_DATA}{"$score_string.Rank"},
+			$mol->{SDF_DATA}{$ligeff_string},
+			$mol->{SDF_DATA}{"$ligeff_string.Rank"};
+			
+		
+		
+		if ($act) {
+			if (defined  $mol->{SDF_DATA}{$act}) {
+				printf $fh "%12f %12f %12f ", 
+				$mol->{SDF_DATA}{$act}, 
+				-log($mol->{SDF_DATA}{$act})/log(10), 
+				$mol->{SDF_DATA}{"$act.Rank"};
+			} else {
+				printf $fh "%12s %12s %12fs ", "''", "''", "''";
+			}
+		}
+		if ($rename_flag) {
+			printf $fh "%14s ", $mol->{SDF_DATA}{$rename} || ' - ';
+		}
+			
+		print $fh $mol->{SMILES} if !$identify_by_name;
+		print $fh "\n";
+	}
+
+	print $fh "\n";
+		
+	print $fh "\n# Read a grand total of $moltotal structures\n";
+	print $fh "# Retained ".($#{$mols}+1)." structures\n";
+	print $fh "\n";
+	
+	foreach my $key (sort(keys %$grand_discard)) {
+		printf $fh "# Discarded - $key: $grand_discard->{$key}\n";
+	}	
+	print $fh "\n";
+}
+
+
+	
+sub find_decoys_actives {
+
+	#<
+	#? Identify decoys and actives
+	#; Requires: molecules
+	#; Returns: total decoys, total actives, total decoys in file, total actives in file
+	#>
+
+	my $mols = $_[0];
+	
+	my $d_str = get_sflag('decoy');
+	
+	my @alist;
+	my $total_decoys = 0;
+	my $total_decoys_file = 0;
+	my $total_actives = 0;
+	my $total_actives_file = 0;
+	
+	my $library_actives = get_sflag('nactive') || 0;
+	my $library_decoys =  get_sflag('ndecoy') || 0;
+	
+	my $afile = get_sflag('afile');
+	
+	if ($afile = get_sflag('afile')) {
+	
+		open (AFILE, $afile) || die "Could not open active file $afile\n";
+		print "Reading actives from file: $afile\n\n";
+	
+		while (<AFILE>) {
+		
+			chomp;
+			s/^s*//;
+			s/s*$//;
+			next if !$_;
+			push @alist, $_;
+			print "Active: $_\n";	
+		}
+	}
+
+	foreach my $mol (@$mols) {
+	
+		my $name = $mol->{NAME};
+		$name =~ s/\|.*//;
+	
+		if ($afile) {
+			
+			# Read active names from file
+			
+			my $flag = 0;
+			foreach (@alist) {
+				next if  $name !~ /^$_/;	
+				$flag = 1;
+				last;
+			}
+			
+			if ($flag) {	
+				$mol->{SDF_DATA}{DECOY} = 0;
+			} else {
+				$mol->{SDF_DATA}{DECOY} = 1;
+			}
+			
+		}  else {
+		
+			# Deduce decoys from molecule name
+			
+			if ($d_str && $mol->{NAME} =~ /^$d_str/) {	
+				$mol->{SDF_DATA}{DECOY} = 1;
+			} else {
+				$mol->{SDF_DATA}{DECOY} = 0;
+			}
+		}
+		
+		if ($mol->{SDF_DATA}{DECOY}) {
+			++$total_decoys_file;
+		} else {
+			++$total_actives_file;
+		}
+	}
+
+	if ($library_actives){
+		print "Found $total_actives_file active compounds in file.  Using $library_actives provided on command line\n";
+		$total_actives = $library_actives;
+		
+	} else {
+		print "Found $total_actives_file active compounds in file.\n";
+		$total_actives = $total_actives_file;
+	}
+	
+	if ($library_decoys){
+		print "Found $total_decoys_file decoy compounds in file.  Using $library_decoys provided on command line\n";
+		$total_decoys = $library_decoys;
+	} else {
+		print "Found $total_decoys_file decoy compounds in file.\n";
+		$total_decoys = $total_decoys_file;
+	}
+	
+	return $total_decoys, $total_actives, $total_decoys_file, $total_actives_file;
+}
+
+sub calculate_roc_curves_clean {
+
+	# Calculations for enrichment plot/ ROC curve.
+
+	my $mols = $_[0] || croak();
+
+	my $sum_actives_file = 0;
+	my $sum_decoys_file = 0;
+	my $area_roc= 0;
+	my $area_enrichment = 0;
+	my $logauc = 0;
+	my $lambda = 0.001;
+	
+	my ($total_decoys, $total_actives, $total_decoys_file, $total_actives_file) = find_decoys_actives($mols);
+	my $total_compounds = $total_actives+$total_decoys;
+	
+	if ($total_actives == 0) {
+		silico_msg('w', "Dataset contains no active compounds.  ROC and enrichment curves will not be calculated\n");
+		return;
+	}
+	
+	my @roc_enrichment_factors;
+	my @enrichment_factors;
+	$roc_enrichment_factors[0] = 0;
+	$enrichment_factors[0] = 0;
+		
+	my $count = 0;
+	my $count_decoy = 0;
+	foreach my $mol (@$mols) {
+
+		++$count;
+
+		$sum_actives_file += !$mol->{SDF_DATA}{DECOY};
+		$sum_decoys_file  +=  $mol->{SDF_DATA}{DECOY};
+		
+		if ($total_decoys != 0 && $total_actives != 0) {
+		
+			# Enrichment curves
+			$area_enrichment += 1/$total_compounds * $sum_actives_file/$total_actives;
+			$enrichment_factors[$count-1] = $sum_actives_file/$count;
+			
+			# ROC curves
+			
+			if ($mol->{SDF_DATA}{DECOY}) {
+				++$count_decoy;
+				$area_roc        += 1/$total_decoys * $sum_actives_file/$total_actives;
+				# logAUC calculation, maps linear values of x to semi-log plot between 0 and 1, only counts area x>lambda 
+				if (($sum_decoys_file-1)/$total_decoys >= $lambda) {
+					$logauc	+= log($sum_decoys_file/($sum_decoys_file-1))/log(10)/(log(1/$lambda)/log(10)) * $sum_actives_file/$total_actives;
+				} elsif ($sum_decoys_file/$total_decoys > $lambda) {
+					$logauc += log(($sum_decoys_file/$total_decoys)/$lambda)/log(10)/(log(1/$lambda)/log(10)) * $sum_actives_file/$total_actives;
+				}
+				$roc_enrichment_factors[$count_decoy-1] = $sum_actives_file/$count_decoy;
+			}
+		}
+	}
+		
+	# Add AUC that results from decoys that were discarded and were not present in file.
+	if ($total_actives + $total_decoys != $total_actives_file + $total_decoys_file) {
+			
+		# AUC
+		my $val = $sum_actives_file/$total_actives * ($total_compounds - $total_actives_file - $total_decoys_file)/$total_compounds;
+		silico_msg ('d', "Error in actives or decoys provided on command line\n") if $val < 0;
+		$area_enrichment += $val;
+		print "val $val act $total_actives dec $total_decoys act_f $total_actives_file decoys_f $total_decoys_file\n";
+		
+		# For ROC CURVE 
+		my $val2 = $sum_actives_file/$total_actives * ($total_decoys - $total_decoys_file)/$total_decoys;
+		silico_msg ('d', "Error in actives or decoys provided on command line\n") if $val2 < 0;
+		$area_roc += $val2;
+
+		# logAUC 
+                my $val3 = $sum_actives_file/$total_actives * (log($total_decoys/$total_decoys_file)/log(10))/(log(1/$lambda)/log(10));
+                silico_msg ('d', "Error in actives or decoys provided on command line\n") if $val3 < 0;
+                $logauc += $val3;
+	}
+		
+	# Enrichment factor @ x% = total actives found @ x%/total library compounds @ x% * total library compounds/ total library actives
+	my $fact = ($total_actives+$total_decoys)/$total_actives;
+	foreach (@enrichment_factors) {
+		$_ = $_ * $fact;
+	}
+
+	# ROC enrichment factor @ x% = total actives found @ x%/total number of decoys @ x% * total number of library decoys/ total number of library actives
+	foreach (@roc_enrichment_factors) {
+		$_ = $_ * $fact;
+	}
+}
+
+
+sub print_roc_results {
+
+	# Print ROC curves
+
+	my $mols = $_[0] || croak();
+	my $fh = $_[1] || croak();
+	my $enrichment_factors = $_[2];
+	
+	my $sum_actives_file = 0;
+	my $sum_decoys_file = 0;
+	my $area_roc= 0;
+	my $area_enrichment = 0;
+	my $logauc = 0;
+	my $lambda = 0.001;
+	
+	my ($total_decoys, $total_actives, $total_decoys_file, $total_actives_file) = find_decoys_actives($mols);
+	my $total_compounds = $total_actives+$total_decoys;
+	
+	# Print header
+	print heading("ROC curve\n");
+	
+	my $namel = length($mols->[0]{NAME}) + 5;
+	
+	print $fh "# Score  = $score_string\n";
+	print $fh "# $le_head = $ligeff_string\n\n";
+		
+	printf $fh "%-$namel"."s %12s %12s ", "#Mol_name", "Score", "Score.Rank", 
+	printf $fh "%12s %12s %12s ", "Decoy", "PctRnk", "PctAct";
+	printf $fh "%12s %12s ", "ROCPcDcy", "ROCPcAct";
+	print $fh "\n";
+		
+	my $count = 0;
+	my $count_decoy = 0;
+	foreach my $mol (@$mols) {
+	
+		printf $fh "%-$namel"."s %12.2f %12d %12.4f %12d ",
+			$mol->{NAME}, 
+			$mol->{SDF_DATA}{$score_string},
+			$mol->{SDF_DATA}{"$score_string.Rank"},
+				
+		printf $fh "%12s %12.2f %12.2f      ",
+			$mol->{SDF_DATA}{DECOY},
+			$count/($total_actives+$total_decoys)*100, 
+			$sum_actives_file/$total_actives*100;
+		printf $fh "%12.2f %12.2f ",$sum_decoys_file/$total_decoys*100, $sum_actives_file/$total_actives*100;
+	}
+
+	print $fh "\n";
+		
+	print $fh "\n# Read $moltotal structures\n";
+	print $fh "# Retained ".($#{$mols}+1)." structures\n";
+	print $fh "# Total actives $sum_actives_file structures\n";
+	print $fh "# Total decoys  $sum_decoys_file structures\n\n";
+
+	
+	printf $fh "# Integral of ROC (AUC) = %6.3f\n", $area_roc;
+	printf $fh "# Integral of enrichment curve (AUC) = %6.3f\n", $area_enrichment;
+	printf $fh "# LogAUC = %6.3f\n", $logauc;
+		
+	print $fh "\n";
+	print $fh ("# Enrichment factors\n");
+	print $fh ("# ------------------\n");
+			
+	my $compound_number; # First compound with a larger percentage than the specified enrichment factor
+	foreach (2,5,10) {
+		$compound_number = int($_/100*($total_actives+$total_decoys));
+		printf $fh "# Enrichment factor at %2d percent: %.2f  Compound number ".($compound_number+1)."\tName: $mols->[$compound_number]{NAME}\n", $_, $enrichment_factors->[$compound_number];
+		#printf $fh "# ROC enrichment factor at %2d percent: %.2f  Compound number ".($compound_number+1)."\tName: $mols->[$compound_number]{NAME}\n", $_, $roc_enrichment_factors[$compound_number];
+	}
+        
+	print $fh "\n";
+}
+
+sub gnuplot_enrichment_curves {
+
+	my $filebase = $_[0];
+
+	run_gnuplot("$filebase.txt", "$filebase\_enr", "Enrichment plot $filebase", 7, 8);
+	run_gnuplot("$filebase.txt", "$filebase\_roc", "ROC plot $filebase", 9, 10);
+}
+
+
+
+sub calculate_roc_curves_orig {
+
+	# Calculations for enrichment plot/ ROC curve.
+
+	my $mols = $_[0] || croak();
+	my $filebase = $_[1] || croak();
+	my $act = $_[2];
+	my $score_string = $_[3] || croak();
+
+	my $sum_actives_file = 0;
+	my $sum_decoys_file = 0;
+	my $area_roc= 0;
+	my $area_enrichment = 0;
+	my $logauc = 0;
+	my $lambda = 0.001;
+	
+	#if (!$d_str) {
+	#	silico_msg('w', "No decoy string set.  ROC and enrichment curves will not be calculated\n");
+	#	return;
+	#}
+	
+	my ($total_decoys, $total_actives, $total_decoys_file, $total_actives_file) = find_decoys_actives($mols);
+	my $total_compounds = $total_actives+$total_decoys;
+	
+	if ($total_actives == 0) {
+		silico_msg('w', "Dataset contains no active compounds.  ROC and enrichment curves will not be calculated\n");
+		return;
+	}
+	
+	if ($act) {
+		rank_molecules ($mols, $act);
+		correlation_coeff($mols, "$act", "$score_string");
+		# Spearman correlation is the correlation coefficient of rank
+		correlation_coeff($mols, "$act.Rank", "$score_string.Rank");
+	}
+	
+	open (OUTFILE, ">$filebase.txt") || silico_msg ("e", "Cannot open file $filebase.txt\n");
+	
+	# Print header
+	print heading("Retained molecules\n");
+	print "\n";
+	
+	my $namel = length($mols->[0]{NAME}) + 5;
+	foreach my $fh (*STDOUT, *OUTFILE) {
+	
+		print $fh "# Score  = $score_string\n";
+		print $fh "# $le_head = $ligeff_string\n\n";
+		
+		printf $fh "%-$namel"."s %12s %12s %12s %12s ", 
+			"#Mol_name", "Score", "Score.Rank", $le_head, "Ligeff.Rank";
+
+		if ($total_decoys != 0) {
+			printf $fh "%12s %12s %12s ", "Decoy", "PctRnk", "PctAct";
+			printf $fh "%12s %12s ", "ROCPcDcy", "ROCPcAct";
+		}
+		if ($act) {
+			printf $fh "%12s %12s %12s ", "Act_$act", "pAct_$act", "pAct_$act.Rank";
+		}
+		
+		print $fh "Smiles" if !$identify_by_name;
+		print $fh "\n";
+	}
+	
+	my @roc_enrichment_factors;
+	my @enrichment_factors;
+	$roc_enrichment_factors[0] = 0;
+	$enrichment_factors[0] = 0;
+		
+	my $count = 0;
+	my $count_decoy = 0;
+	foreach my $mol (@$mols) {
+
+		++$count;
+
+		$sum_actives_file += !$mol->{SDF_DATA}{DECOY};
+		$sum_decoys_file  +=  $mol->{SDF_DATA}{DECOY};
+		
+		if ($total_decoys != 0 && $total_actives != 0) {
+		
+			# Enrichment curves
+			$area_enrichment += 1/$total_compounds * $sum_actives_file/$total_actives;
+			$enrichment_factors[$count-1] = $sum_actives_file/$count;
+			
+			# ROC curves
+			
+			if ($mol->{SDF_DATA}{DECOY}) {
+				++$count_decoy;
+				$area_roc        += 1/$total_decoys * $sum_actives_file/$total_actives;
+				# logAUC calculation, maps linear values of x to semi-log plot between 0 and 1, only counts area x>lambda 
+				if (($sum_decoys_file-1)/$total_decoys >= $lambda) {
+					$logauc	+= log($sum_decoys_file/($sum_decoys_file-1))/log(10)/(log(1/$lambda)/log(10)) * $sum_actives_file/$total_actives;
+				} elsif ($sum_decoys_file/$total_decoys > $lambda) {
+					$logauc += log(($sum_decoys_file/$total_decoys)/$lambda)/log(10)/(log(1/$lambda)/log(10)) * $sum_actives_file/$total_actives;
+				}
+				$roc_enrichment_factors[$count_decoy-1] = $sum_actives_file/$count_decoy;
+			}
+		}
+
+		foreach my  $fh (*STDOUT, *OUTFILE) {
+		
+			printf $fh "%-$namel"."s %12.2f %12d %12.4f %12d ",
+				$mol->{NAME}, 
+				$mol->{SDF_DATA}{$score_string},
+				$mol->{SDF_DATA}{"$score_string.Rank"},
+				$mol->{SDF_DATA}{$ligeff_string},
+				$mol->{SDF_DATA}{"$ligeff_string.Rank"};
+				
+			if ($total_decoys != 0 && $total_decoys != 0) {
+				printf $fh "%12s %12.2f %12.2f      ",
+					$mol->{SDF_DATA}{DECOY},
+					$count/($total_actives+$total_decoys)*100, 
+					$sum_actives_file/$total_actives*100;
+				printf $fh "%12.2f %12.2f ",$sum_decoys_file/$total_decoys*100, $sum_actives_file/$total_actives*100;
+			}
+			if ($act) {
+				if (defined  $mol->{SDF_DATA}{$act}) {
+						printf $fh "%12f %12f %12f ", $mol->{SDF_DATA}{$act}, 
+						-log($mol->{SDF_DATA}{$act})/log(10), 
+						$mol->{SDF_DATA}{"$act.Rank"};
+				} else {
+					print $fh "    ''        ''        ''      ";
+				}
+			}
+			
+			print $fh " $mol->{SMILES}" if !$identify_by_name;
+			print $fh "\n";
+		}
+	}
+		
+	# Add AUC that results from decoys that were discarded and were not present in file.
+	if ($total_actives + $total_decoys != $total_actives_file + $total_decoys_file) {
+			
+		# AUC
+		my $val = $sum_actives_file/$total_actives * ($total_compounds - $total_actives_file - $total_decoys_file)/$total_compounds;
+		silico_msg ('d', "Error in actives or decoys provided on command line\n") if $val < 0;
+		$area_enrichment += $val;
+		print "val $val act $total_actives dec $total_decoys act_f $total_actives_file decoys_f $total_decoys_file\n";
+		
+		# For ROC CURVE 
+		my $val2 = $sum_actives_file/$total_actives * ($total_decoys - $total_decoys_file)/$total_decoys;
+		silico_msg ('d', "Error in actives or decoys provided on command line\n") if $val2 < 0;
+		$area_roc += $val2;
+
+		# logAUC 
+                my $val3 = $sum_actives_file/$total_actives * (log($total_decoys/$total_decoys_file)/log(10))/(log(1/$lambda)/log(10));
+                silico_msg ('d', "Error in actives or decoys provided on command line\n") if $val3 < 0;
+                $logauc += $val3;
+	}
+		
+	# Enrichment factor @ x% = total actives found @ x%/total library compounds @ x% * total library compounds/ total library actives
+	my $fact = ($total_actives+$total_decoys)/$total_actives;
+	foreach (@enrichment_factors) {
+		$_ = $_ * $fact;
+	}
+
+	# ROC enrichment factor @ x% = total actives found @ x%/total number of decoys @ x% * total number of library decoys/ total number of library actives
+	foreach (@roc_enrichment_factors) {
+		$_ = $_ * $fact;
+	}
+		
+	foreach my $fh (*STDOUT, *OUTFILE) {	
+
+		print $fh "\n";
+		
+		print $fh "\n# Read $moltotal structures\n";
+		print $fh "# Retained ".($#{$mols}+1)." structures\n";
+		print $fh "# Total actives $sum_actives_file structures\n";
+		print $fh "# Total decoys  $sum_decoys_file structures\n\n";
+
+                if ($total_decoys != 0 && $total_actives != 0) {
+			printf $fh "# Integral of ROC (AUC) = %6.3f\n", $area_roc;
+			printf $fh "# Integral of enrichment curve (AUC) = %6.3f\n", $area_enrichment;
+			printf $fh "# LogAUC = %6.3f\n", $logauc;
+		
+			print $fh "\n";
+			print $fh ("# Enrichment factors\n");
+			print $fh ("# ------------------\n");
+			
+			my $compound_number; # First compound with a larger percentage than the specified enrichment factor
+			foreach (2,5,10) {
+				$compound_number = int($_/100*($total_actives+$total_decoys));
+				printf $fh "# Enrichment factor at %2d percent: %.2f  Compound number ".($compound_number+1)."\tName: $mols->[$compound_number]{NAME}\n", $_, $enrichment_factors[$compound_number];
+				#printf $fh "# ROC enrichment factor at %2d percent: %.2f  Compound number ".($compound_number+1)."\tName: $mols->[$compound_number]{NAME}\n", $_, $roc_enrichment_factors[$compound_number];
+			}
+                }
+		print $fh "\n";
+	}
+	
+	if ($total_decoys != 0 && $total_actives != 0) {
+		run_gnuplot("$filebase.txt", "$filebase\_enr", "Enrichment plot $filebase", 7, 8);
+		run_gnuplot("$filebase.txt", "$filebase\_roc", "ROC plot $filebase", 9, 10);
+	}
+}
+
+sub rank_molecules {
+
+	#<
+	#? Create ranks for a data key. Correctly deals with tied ranks
+	#. Ranks start from 0.
+	#; Requires: molecules, SDF_DATA key for ranking
+	#>
+
+	my $mols = $_[0];
+	my $key = $_[1];
+
+	my $rmols;
+	foreach my $mol (@$mols) {
+
+		push @$rmols, $mol if defined $mol->{SDF_DATA}{$key};
+	}
+	
+	if (!defined $rmols->[0]) {
+		silico_msg ('w', "Unable to find key '$key' in data file\n");
+		return undef;
+	}
+
+	@$rmols = sort {$a->{SDF_DATA}{$key} <=> $b->{SDF_DATA}{$key}} @$rmols;
+	
+	my $i = 0;
+	while (1) {
+
+		my $mol = $rmols->[$i];
+		last if !defined $mol;
+
+		my $j = 0;
+		my $sum = $i;
+		my @list = ($mol);
+		while (1) {
+
+			++$j;
+			my $mol2 = $rmols->[$i+$j];
+
+			if (defined $mol2  && $mol2->{SDF_DATA}{$key} == $mol->{SDF_DATA}{$key}) {
+				$sum += $i+$j;
+				push @list, $mol2;
+
+			} else {
+
+				foreach my $m (@list) {
+					$m->{SDF_DATA}{"$key.Rank"} = $sum/($#list+1);	
+				}
+				$i = $i+$j;
+				last;
+			}
+		}
+	}
+
+	#$i = 0;
+	#foreach my $mol (@$rmols) {
+	#	print "hh i $i $mol->{SDF_DATA}{$key} \t$mol->{SDF_DATA}{\"$key.Rank\"}\n";
+	#	++$i;
+	#}
+}
+
+sub correlation_coeff {
+
+	#<
+	#; Calculate correlation coefficient
+	#; Requires: molecule, SDF_data fields 
+	#; Returns: correlation coeff or undef if variance is zero
+	#>
+		
+	my $mols = $_[0];
+	my $f1 = $_[1];
+	my $f2 = $_[2];
+
+	my $n = 0;
+	my $sx = 0;
+	my $sy = 0;
+	my $sxy = 0;
+	my $sx2 = 0;
+	my $sy2 = 0;
+	my $undefined = 0;
+
+	foreach my $mol (@$mols) {
+
+		my $x = $mol->{SDF_DATA}{$f1};
+		my $y = $mol->{SDF_DATA}{$f2};
+
+		if (!defined $x || !defined $y) {
+			++$undefined;
+			next;
+		}
+
+		++$n;
+		$sx += $x;
+		$sy += $y;
+		$sxy += $x*$y;
+		$sx2 += $x**2;
+		$sy2 += $y**2;
+	}
+
+	silico_msg ('c', "Found $undefined molecules with no defined values in field $f1 or $f2.\n","These will not be included in statistics\n");
+
+	return undef if sqrt($n * $sx**2 - $sx2) * sqrt($n * $sy**2 - $sy2) == 0;
+
+	return ($n * $sxy - $sx * $sy)/(sqrt($n * $sx**2 - $sx2) * sqrt($n * $sy**2 - $sy2));
+}
+
+
+sub run_gnuplot {
+
+	#<
+	#; Plots multiple data columns on a single graph
+	#; Requires: Gnuplot tab delimited data, output filename, optional title
+	#; Returns: nothing
+	#>
+		
+	my $datafile = shift; # File with white space delimited data
+	my $filebase = shift;  # Output file
+	my $title = shift;    # Title
+	my $col_x = shift;    # X column
+	my @col_y = @_;       # Y columns (numbered from zero)
+	
+	use vars qw($gnuplot_exe);
+	
+	my $gnuplot = $gnuplot_exe || 'gnuplot';
+	my $style = get_sflag('style') || 'lines';
+	my $term = get_sflag('term') || 'postscript';
+	
+	my $ext;
+	if ($term eq 'postscript') {
+		$ext = 'ps';
+	} elsif ($term eq 'png') {
+		$ext = 'png';
+	} else {
+		$ext = $term;
+	}
+
+	my $comfile = $filebase.".inp";
+	my $outfile = "$filebase.$ext";
+	
+	# Produce command file for gnuplot
+	open (GPFILE, ">$comfile") || file_write_error($comfile, 1);
+	
+	my $colorstring="color";
+	my $keystring="set nokey";
+	my $aspectstring="portrait";
+	my $ratio=1.0;
+	my $scale=0.8;
+
+	my $date = `date`;
+	chomp $date;
+	$title= $title || "$outfile $date";
+
+	print GPFILE "set output \"$outfile\"\n";
+	print GPFILE "set size $ratio*$scale,$scale\n";
+	print GPFILE "set key\n";
+	print GPFILE "set title \"$title\"\n";
+	print GPFILE "set noxzeroaxis\n";
+	print GPFILE "set noyzeroaxis\n";
+	print GPFILE "set xrange [0:100]\n";
+	print GPFILE "set yrange [0:100]\n";
+	
+	print GPFILE "$keystring\n";
+	print GPFILE "set term postscript $aspectstring $colorstring \"Helvetica\" 12\n" if $term eq 'postscript';
+	print GPFILE "set term $term\n" if $term ne 'postscript';
+	
+	if (!open (DATFILE, $datafile)) {
+		file_read_error($datafile);
+		return 0;
+	}
+	
+	my $line = <DATFILE>;
+	
+	my @f;
+	if ($line =~ /^\s*#/) {
+		$line =~ s/^\s*#\s*//g; # Get rid of '#'
+		@f = split ' ', $line;
+	} else {
+		silico_msg('w', "No header line (starting with '#') found\n");
+		my @f = split ' ', $line;
+		my $count = 1;
+		foreach (@f) {
+			$_ = $count;
+			++$count;
+		}
+	}
+	
+	close DATFILE;
+	
+	my $xtitle = $f[$col_x] || '';
+	$xtitle =~ s/_/ /g;
+	print GPFILE "set xlabel \"$xtitle\" offset 0,-1\n";
+
+	my $ytitle = $f[$col_y[0]] || '';
+	$ytitle =~ s/_/ /g;
+	print GPFILE "set ylabel \"$ytitle\" offset 0,-1\n";
+
+	print GPFILE "plot ";
+	
+	my $header;
+	my $headcount = 1;
+	my $count = 0;
+	foreach my $hnum (@col_y) {
+	
+		$header = $f[$hnum];
+	
+		++$headcount;
+		++$count;
+		if ($headcount > 2) {
+			print GPFILE ",";
+		}
+		
+		print GPFILE "\"$datafile\" using ".($col_x+1)." :".($hnum+1)." title '$header' w $style lt $count";
+		
+	}
+	print GPFILE "\n";
+	
+	close GPFILE;
+	
+	# Run gnuplot	
+	my $gs = system "$gnuplot $comfile";
+	if ($gs) {
+		silico_msg('e', "Execution of gnuplot failed!\n",
+				"No graphs created.\n");
+		return 0;
+	}
+	return 1;
+}
+
+sub select_pareto_front {
+
+	#<
+	#? Select molecules using a Pareto front approach
+	#. Molecules are assigned a Pareto Rank depending on
+	#  the number of dominating individuals (Method of Fonseca and Fleming).
+	#; Requires: ensemble, array of SDF fields to be minimised, array of SDF fields to be 
+	#  maximised, approx number of compounds to retain (0 to retain all), 
+	#  name the PARETO_RANK field, quiet flag
+	#; Returns: ranked ensemble
+	#>
+
+	my $mols = $_[0];
+	my $pareto_vars_min = $_[1]; # Variables to minimise
+	my $pareto_vars_max = $_[2]; # Variables to maximise
+	my $num = $_[3]; # Approx number of compounds to select per parent.  Retain all compounds if this is set to zero
+	my $rank_string = $_[4] || die;
+	my $quiet = $_[5];
+	
+	$num = $#{$mols}+1 if !$num;
+	
+	if (!$quiet) {
+		print "\nMinimising variables: @$pareto_vars_min\n";
+		print "Maximising variables: @$pareto_vars_max\n";
+		print "Selecting approx $num compounds\n" if $num;
+		print "\n";
+	}
+	
+	# Round sig figs
+	foreach my $mol (@$mols) {
+	
+		foreach my $var (@$pareto_vars_min, @$pareto_vars_min) {
+			silico_msg('w', "No value for SDF field: $var") if !defined $var;
+			$mol->{SDF_DATA}{$var} = sprintf "%.2f", ($mol->{SDF_DATA}{$var}|| 0) ;
+		}
+	}
+	
+	
+	foreach my $mol1 (@$mols) {
+	
+		print "****************** $mol1->{NAME} ******************\n" if !$quiet;
+	
+		$mol1->{SDF_DATA}{$rank_string} = 0;
+
+		foreach my $mol2 (@$mols) {
+		
+			next if $mol1 == $mol2;
+
+			# Functions being minimised
+			# Find if MOL1 dominates MOL2 (ie has all values SMALLER than MOL2)
+			my $mol1_is_dominated = 1;
+			foreach my $var (@$pareto_vars_min) {
+				
+				if ($mol1->{SDF_DATA}{$var}  < $mol2->{SDF_DATA}{$var}) {
+					$mol1_is_dominated = 0;
+					last;
+				}
+			}
+			
+			# Functions being maximised
+			# Find if MOL1 dominates MOL2 (ie has all values GREATER than MOL2)
+			foreach my $var (@$pareto_vars_max) {
+			
+				if ($mol1->{SDF_DATA}{$var} > $mol2->{SDF_DATA}{$var}) {
+					$mol1_is_dominated = 0;
+					last;
+				}
+			}
+			
+			if ($mol1_is_dominated) {
+			
+				if (!$quiet) {
+					print "\nmol1 ($mol1->{NAME}) is dominated by mol2 ($mol2->{NAME})\n";
+					print "Mol1	Mol2\n";
+					foreach my $var (@$pareto_vars_max) {
+						printf "max %25s %6.2f% 6.2f\n",$var,$mol1->{SDF_DATA}{$var},$mol2->{SDF_DATA}{$var};
+					}
+					foreach my $var (@$pareto_vars_min) {
+						printf "min %25s %6.2f% 6.2f\n",$var,$mol1->{SDF_DATA}{$var},$mol2->{SDF_DATA}{$var};
+					}
+				}
+				
+				++$mol1->{SDF_DATA}{$rank_string};
+			}	
+		}
+	}
+	
+	my $sorted;
+	@$sorted = sort {$a->{SDF_DATA}{$rank_string} <=> $b->{SDF_DATA}{$rank_string}} @$mols;
+	
+	# Select all molecules up to rank of approx number of molecules required
+	my $b = $#{$sorted}+1;
+	my $newmols;
+	if ($b > $num) {
+	
+		my $r = $sorted->[$num]{SDF_DATA}{$rank_string};
+		#print "b $b r $r num $num\n";
+	
+		foreach my $mol (@$sorted) {
+		
+			next if $mol->{SDF_DATA}{$rank_string} > $r;
+			push @$newmols, $mol;
+		}
+	} else {
+		$newmols = $sorted;
+	}
+	
+	
+	my $c = $#{$newmols}+1;
+
+	print "Retained $c of $b molecules after Pareto selection\n" if $num;
+	print "\n";
+
+	return $newmols;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

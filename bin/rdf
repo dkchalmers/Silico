@@ -1,0 +1,1178 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! rdf
+#? Calculate a radial distribution function
+#F
+#; -i (required) RDF Input file
+#. $Revision: 1.36.2.1.2.1 $
+#>
+
+# Run the Silico Setup routine and print the title
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @arguments;
+my $input;
+my $inputfile;
+my $total_starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("rdf", '$Revision: 1.36.2.1.2.1 $');
+
+require silico_gromacs;
+require silico_statistics;
+
+$inputfile = make_flag('i', undef, "Input file detailing RDF's and parameters", 1, undef, 1);
+
+@arguments = get_arguments2('>=1', 'none');
+
+# If the input hash is not defined, there is a major problem, and the script will die
+# In any case, it is impossible to continue without it
+$input = read_rdf_input_file($inputfile);
+if (!defined $input) {
+	silico_msg('d', "Can not read data from file $inputfile!\n");
+}
+
+# On the other hand, if the input hash is defined OK, calculate radial distribution functions
+# based on the information it contains
+calculate_rdfs($input);
+
+print_finished_message();
+print_timing_message($total_starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+##########################
+# Reading the input file #
+##########################
+
+sub read_rdf_input_file {
+	
+	#<
+	#? A subroutine to read the contents of an RDF input file, and put them into a hash
+	#; Passed variables: A file name ($file)
+	#; Returns: An input hash ($input); nothing (undef) if an error occurred
+	#>
+	
+	my $file = $_[0];
+	
+	my @f;
+	
+	my $funclines = 0;
+	my $funcs = 0;
+	my $params = 0;
+	my $paramflag = 0;
+	
+	my $funclist;
+	my @funclists;
+	
+	my $funcflag = 0;
+	
+	my $i = 0;
+	
+	my $input;
+	
+	# Kick out of this subroutine with a warning if the open failed
+	if (!open_file(*INFILE, $file)) {
+		silico_msg('e', "Failed to open input file $file!\n");
+		return undef;
+	}
+	
+	# Print note explaining what file is being read
+	silico_msg('c', "Preparing RDF input data structure from input file $file\n");
+	
+	# For each line in the input file...
+	INPUTLINE: while (<INFILE>) {
+	
+		# Get rid of carriage returns
+		chomp;
+
+		# Skip lines starting with hashes (which are comments)
+		# or lines containing only whitespace
+		next INPUTLINE if /^\s*$/;
+		next INPUTLINE if /^\s*#/;
+		
+		# Exclamation marks - start new sections
+		if (/^\s*\!/) {
+		
+			# If the !PARAMETERS keyword is found, start a "parameters" section
+			if (/^\s*\!\s*PARAMETERS/i) {
+			
+				if ($params == 1) {
+					silico_msg('e', "Multiple PARAMETERS sections in file!\n");
+					return undef;
+				}
+			
+				$funcflag = 0;
+				$paramflag = 1;
+				$params = 1;
+
+			# Otherwise if the !FUNCTIONS keyword is found, start a "functions" section
+			} elsif (/^\s*\!\s*FUNCTIONS/i) {
+		
+				if ($funcs == 1) {
+					silico_msg('e', "Multiple FUNCTIONS sections in file!\n");
+					return undef;
+				}
+				
+				$funcflag = 1;
+				$funcs = 1;
+				$paramflag = 0;
+				
+			# Otherwise, we don't know how to handle any other keywords - print a warning
+			# (this is not an error because it doesn't cause any harm)
+			} else {
+				silico_msg('w', "I don't know what to do with section \"$_\".\n",
+						"Skipping this line.\n");
+			}
+			
+			next INPUTLINE;
+		
+		} elsif ($paramflag == 1) {
+		
+			# Split on tabs
+			@f = split (/\t+/, $_);
+			
+			# Make sure the first element is all lower case - for ease of pattern matching
+			$f[0] = lc ($f[0]);
+			
+			# Remove whitespace of any kind from the second element
+			# and make sure it is lower case
+			$f[1] =~ s/\s+//g;
+			$f[1] = lc ($f[1]) if ($f[0] ne 'indexfile');
+			
+			# If the first element in this line is an 'indexfile' definition...
+			if ($f[0] eq 'indexfile') {
+			
+				# Exit if there is already an indexfile set, or if it doesn't actually give a file to use
+				if (defined $params::indexfile) {
+					silico_msg('e', "Attempt to define INDEXFILE more than once!\n");
+					return undef;
+				} elsif (!defined $f[1]) {
+					silico_msg('e', "INDEXFILE keyword was used, but no indexfile was defined.\n");
+					return undef;
+				# Otherwise, read in the index to the input data structure
+				} else {
+					*params::indexfile = \$f[1];
+					$params::index = read_gromacs_indexfile($params::indexfile);
+					# Exit if the reading of the index file failed
+					if (!defined $params::index) {
+						silico_msg('e', "Unable to read index from file $params::indexfile!\n");
+						return undef;
+					}
+				}
+				
+			# If the first element in this line is a 'binsize' definition...
+			} elsif ($f[0] eq 'binsize') {
+			
+				# Exit if there is already a binsize defined, or if no binsize was defined
+				if (defined $params::binsize) {
+					silico_msg('e', "Attempt to define BINSIZE more than once!\n");
+					return undef;
+				} elsif (!defined $f[1]) {
+					silico_msg('e', "BINSIZE keyword was used, but no bin size was defined.\n");
+					return undef;
+				# Otherwise, check the data is numeric and greater than zero
+				} elsif (check_data_type ($f[1], 'DECIMAL >0')  != 1) {
+					silico_msg('e', "Inappropriate value for BINSIZE keyword.\n",
+							"Should be numeric and greater than 0.\n");
+					return undef;
+				# If it is OK, set it
+				} else {
+					$params::binsize = $f[1];
+				}
+			
+			# If the first element in this line is a 'cutoff_min' definition...
+			} elsif ($f[0] eq 'cutoff_min') {
+			
+				# Exit if a minimum cutoff distance is already defined, or if it doesn't say what to set it to
+				if (defined $params::cut_min) {
+					silico_msg('e', "Attempt to define CUTOFF_MIN more than once!\n");
+					return undef;
+				} elsif (!defined $f[1]) {
+					silico_msg('e', "CUTOFF_MIN keyword was used, but no minimum cutoff distance was defined.\n");
+					return undef;
+				# Otherwise, check if the data is numeric and at least zero
+				} elsif (check_data_type ($f[1], 'DECIMAL >=0')  != 1) {
+					silico_msg('e', "Inappropriate value for CUTOFF_MIN keyword.\n",
+							"Should be a real number >= 0.\n");
+					return undef;
+				# If it is OK, set it
+				} else {
+					$params::cut_min = $f[1];
+				}
+			
+			# If the first element in this line is a 'cutoff_max' definition...
+			} elsif ($f[0] eq 'cutoff_max') {
+			
+				# Check there hasn't been a maximum cutoff distance defined already
+				if (defined $params::cut_max) {
+					silico_msg('e', "Attempt to define CUTOFF_MAX more than once!\n");
+					return undef;
+				# Check there is actually one defined now
+				} elsif (!defined $f[1]) {
+					silico_msg('e', "CUTOFF_MAX keyword was used, but no maximum cutoff distance was defined.\n");
+					return undef;
+				# Check this is numeric and greater than zero
+				} elsif (check_data_type ($f[1], 'DECIMAL >0')  != 1) {
+					silico_msg('e', "Inappropriate value for CUTOFF_MAX keyword.\n",
+							"Should be a positive real number.\n");
+					return undef;
+				# If it is OK, set it
+				} else {
+					$params::cut_max = $f[1];
+				}
+				
+			# If the first element in this line is a 'pbc' definition...
+			} elsif ($f[0] eq 'pbc') {
+			
+				#  Check there hasn't been a PBC definition already
+				if (defined $params::pbc) {
+					silico_msg('e', "Attempt to define PBC more than once!\n");
+					return undef;
+				# Check there is something being set now
+				} elsif (!defined $f[1]) {
+					silico_msg('e', "PBC keyword was used, but no value was supplied!\n");
+					return undef;
+				# Check the value is appropriate
+				} elsif ($f[1] ne 'on' && $f[1] ne 'off') {
+					silico_msg('e', "Inappropriate value for PBC keyword.\n",
+							"Should be \"on\" or \"off\".\n");
+					return undef;
+				# If it is OK then set it
+				} elsif ($f[1] eq 'on') {
+					$params::pbc = 1;
+				} else {
+					$params::pbc = 0;
+				}
+								
+			# If the first element in this line is a "statistics" definition...
+			} elsif ($f[0] eq 'statistics') {
+			
+				#  Check there hasn't been a STATS definition already
+				if (defined $params::stats) {
+					silico_msg('e', "Attempt to specify calculation of statistics more than once!\n");
+					return undef;
+				# Check there is something being set now
+				} elsif (!defined $f[1]) {
+					silico_msg('e', "STATISTICS keyword was used, but no value was supplied!\n");
+					return undef;
+				# Check the value is appropriate
+				} elsif ($f[1] ne 'on' && $f[1] ne 'off') {
+					silico_msg('e', "Inappropriate value for STATISTICS keyword.\n",
+							"Should be \"on\" or \"off\".\n");
+					return undef;
+				# If it is OK then set it
+				} elsif ($f[1] eq 'on') {
+					$params::stats = 1;
+				} else {
+					$params::stats = 0;
+				}								
+			
+			# Skip any line that the program shouldn't know how to handle
+			} else {
+				silico_msg('w', "I don't know what to do with line \"$_\".\n",
+						"Skipping this line.\n");
+			}
+			
+			next INPUTLINE;		
+		
+		# If this line is in the functions section...
+		} elsif ($funcflag == 1) {
+		
+			# Count the number of function lines
+			++$funclines;
+			
+			# Split on tabs
+			@f = split ("\t", $_);
+			
+			# If there is nothing there, skip and move to the next line
+			next INPUTLINE if (!defined $f[0]);
+			
+			# Attempt to read in this function line
+			$funclist = read_function_line(@f, $input);
+			
+			# If -1 is returned by read_function_line, this is indicative of a serious error
+			# so we want to skip this line
+			if ($funclist == -1) {
+				silico_msg('w', "An error occurred while reading the FUNCTIONS section!\n",
+						"This error occured $funclines occupied lines below the start of the FUNCTIONS section.\n",
+						"This line has been skipped.\n");
+				next INPUTLINE;
+			# Otherwise, just push it into the hash
+			} else {
+				$input->{FUNCLISTS}[$i] = $funclist;
+				++$i;
+			}
+			next INPUTLINE;
+		}
+	}
+	
+	# Set some default values
+	$params::cut_min ||= 0;
+	
+	# Finally, close the input file and return the input table
+	close INFILE;
+	return $input;
+				
+}
+
+sub read_function_line {
+	
+	#<
+	#? A subroutine to process a single function line from an RDF input file
+	#  in preparation for adding to the FUNCLISTS element of the $input hash
+	#; Passed variables: @_
+	#; External variables: input hashref ($input)
+	#; Returns: A single list of functions, with parameters, or -1 if an error occurred
+	#>
+
+	my $input = pop @_;	# We don't want the input hash cluttering up
+				# the list of values
+		
+	my $density;
+	my $func;
+	my $funclist;
+	my $group;
+	my $i = 0;
+	my $outfile_base;
+	my $refgrp_ok;
+	my $tgtgrp;
+	my $tgtgrp_ok;
+	
+	# Outfile is the first element in @_
+	$funclist->{OUTFILE_BASE} = shift;
+	$funclist->{OUTFILE_BASE} =~ s/\s+//g;
+
+	# Check to make sure an outfile is actually defined
+	if (!defined $funclist->{OUTFILE_BASE}) {
+		silico_msg('w', "No output file name is defined. Please check your input file.\n");
+		return -1;
+	}
+	
+	# Refgrp is the second element in @_
+	$funclist->{REFGRP} = shift;
+	$funclist->{REFGRP} =~ s/\s+//g;
+
+	# Check to make sure a reference group is actually defined
+	if (!defined $funclist->{REFGRP}) {
+		silico_msg('w', "No reference group is defined. Please check your input file.\n");
+		return -1;
+	
+	} else {
+	
+		silico_msg('c', "Reference group: $funclist->{REFGRP}\n");
+		
+		# If a reference group is defined, make sure it exists in the index file
+		undef $refgrp_ok;
+
+		foreach $group (keys %$params::index) {
+			$refgrp_ok = 1 if ($group eq $funclist->{REFGRP});
+		}
+		
+		if (defined $funclist->{REFGRP} && !defined $refgrp_ok) {
+			silico_msg('e', "The requested reference group ($funclist->{REFGRP}) does not appear to be in the index file!\n");
+			return -1;
+		}
+	}
+
+	# Averaging method is the third element in @_
+	$funclist->{AVERAGING} = shift;
+	$funclist->{AVERAGING} =~ s/\s+//g;
+	
+	# Check to make sure an averaging method is both defined and appropriate
+	# Averaging method is either com (about the centre of mass), atoms, or no averaging
+	# If "com", only one RDF is calculated per target group, being the RDF of
+	# the atoms in the target group about the centre of mass of the reference group.
+	# If "atoms", one RDF is calculated for each target group, about each atom in
+	# the reference group. These RDFs are summed together and divided by the number
+	# of atoms in the reference group.
+	# If "none", it is like "atoms", only the the RDFs are, once summed together,
+	# not divided by the number of atoms in the reference group.
+	if (!defined $funclist->{AVERAGING}) {
+		silico_msg('e', "No averaging method is defined!\n",
+				"Please check your input file.\n");
+		return -1;
+	} elsif ($funclist->{AVERAGING} ne 'com' && $funclist->{AVERAGING} ne 'atoms' && $funclist->{AVERAGING} ne 'none') {
+		silico_msg('e', "Inappropriate value for averaging method!\n",
+				"The averaging method should be one of \"com\", \"atoms\" or \"none\".\n");
+		return -1;
+	}
+	
+	# Flag to use only the shortest distance is the fourth element in @_
+	# This flag is an option to record, for each point in the reference group
+	# (centre of mass if "com" averaging, atom otherwise), only the distance
+	# to the nearest neighbour in each target group. This should really be used in
+	# conjunction with averaging = "none", so it records the number of atoms
+	# in the reference group who have a nearest neighbour in the target group
+	# at distance D.
+	$funclist->{NEAREST} = shift;
+	$funclist->{NEAREST} =~ s/\s+//g;
+	
+	if (!defined $funclist->{NEAREST}) {
+		silico_msg('e', "Use of all atoms or nearest atom is not defined!\n",
+				"Please check your input file.\n");
+		return -1;
+	} elsif ($funclist->{NEAREST} ne 'all' && $funclist->{NEAREST} ne 'nearest') {
+		silico_msg('e', "Inappropriate value for use of nearest atom option!\n",
+				"Should be one of \"all\" or \"nearest\".\n");
+		return -1;
+	}
+	
+	# Units are the fifth element in @_
+	# The units are how to measure the RDF. Three options are available.
+	# "count" is a bare count of the number of atoms in the bin in question.
+	# "density" is a density of atoms in that bin, calculated as atoms per
+	# cubic angstrom.
+	# "prob" is a relative probability. In this case, a "normal" density, in
+	# atoms per cubic angstrom, needs to be supplied in the input file (see
+	# below). A density is calculated and divided through by this "normal"
+	# density. For example, a return value of 2 under this setting means that
+	# one is twice as likely to find an atom of the target set in this bin
+	# than would be expected in bulk solvent.
+	$funclist->{UNITS} = shift;
+	$funclist->{UNITS} =~ s/\s+//g;
+
+	# Check to make sure units are both defined and appropriate
+	# Units are either count, density or prob
+	if (!defined $funclist->{UNITS}) {
+		silico_msg('e', "No units are defined!\n",
+				"Please check your input file.\n");
+		return -1;
+	} elsif ($funclist->{UNITS} ne 'count'  && $funclist->{UNITS} ne 'density' && $funclist->{UNITS} ne 'prob') {
+		silico_msg('e', "Inappropriate value for units!\n",
+				"The units should be either \"count\", \"density\" or \"prob\".\n");
+		return -1;
+	}
+	
+	while (1) {
+		
+		# Target groups and densities for this group now occur in pairs
+		# Target groups are the 5th, 7th, 9th... elements in @_
+		$tgtgrp = shift;
+						
+		# Exit this loop if there is nothing found here
+		last if !$tgtgrp;
+		
+		# Check that there is actually a matching target group in the index
+		undef $tgtgrp_ok;
+		foreach $group (keys %$params::index) {
+			$tgtgrp_ok = 1 if ($group eq $tgtgrp);
+		}
+
+		# Skip a target group if it is not defined - and print a warning
+		if (!defined $tgtgrp_ok) {
+			silico_msg('w', "The requested target group ($tgtgrp) does not appear to be in the index file!\n",
+					"This group will be skipped.\n");
+			
+			# To stop the density field being picked up on the next pass, shift it now
+			shift;
+			next;
+		}
+		
+		# Densities are the 6th, 8th, 10th... elements in @_
+		$density = shift;
+		
+		# If we are using probabilities, we need to perform a rigorous check on the density
+		# We need to make sure it exists and is greater than zero
+		if ($funclist->{UNITS} eq 'prob') {
+		
+			if (!$density) {
+				silico_msg('w', "No \"average\" density provided!\n",
+						"Target group: $tgtgrp\n",
+						"This group will be skipped.\n");
+				next;
+			} elsif (check_data_type($density, 'DECIMAL >0') != 1) {
+				silico_msg('w', "\"Average\" density is not numeric or is less than 0!\n",
+						"Target group: $tgtgrp\n",
+						"This group will be skipped.\n");
+				next;
+			}
+		}
+			
+		# Push each of these "functions" into the list of functions as references to arrays
+		undef $func;
+		@$func = ($tgtgrp, $density);
+		$funclist->{FUNCTIONS}[$i] = $func;
+		++$i;
+	}
+	
+	# Finally, return the list of functions
+	return $funclist;
+}
+
+
+
+###########################################
+# Calculating the RDFs across many frames #
+###########################################
+
+sub calculate_rdfs {
+
+	#<
+	#? A subroutine to calculate all radial distribution functions in an input hash
+	#; Passed variables: Input hashref ($input)
+	#; Returns: Nothing
+	#>
+	
+	my $input = $_[0];
+	
+	# Declare some variables used in this subroutine only and not in any called subroutines
+	my $funclist;
+	
+	# For each function line from the input file...
+	foreach $funclist (@{$input->{FUNCLISTS}}) {
+	
+		# ...define a number of variables relevant to this function line only
+		# Some of these are contained in the input hash
+		# Others are merely "declared" so Perl knows they are local only
+
+		my $function;
+		my $outfile_base = $funclist->{OUTFILE_BASE};
+		my $refcount = 0;
+		my $refgrp = $funclist->{REFGRP};
+				
+		# Initialise some locally scoped variables
+		$funclist::averaging = $funclist->{AVERAGING};
+		undef $funclist::nearest;
+		$funclist::nearest = 1 if $funclist->{NEAREST} eq 'nearest';
+		undef $funclist::bins;
+		$funclist::largest_bin_used = 0;
+		#$funclist::numstruct = 0;
+		$funclist::units = $funclist->{UNITS};
+		
+		foreach (@{$params::index->{$refgrp}}) {++$refcount}
+		
+		# For each function - that is, reference group - target group pair on a single
+		# function line...
+		foreach $function (@{$funclist->{FUNCTIONS}}) {
+			
+			$funclist::numstruct = 0;
+			
+			# ...define the target group
+			my $tgtgrp = $function->[0];
+			
+			# Calculate the rdf
+			$function->[2] = $refcount if ($refcount);
+			calculate_one_rdf($refgrp, $tgtgrp, $input);
+		}
+		
+		# Write the output file containing all RDFS for this "function line"
+		write_rdf_output_file($outfile_base, $refgrp, $funclist);
+	}
+}
+
+
+sub calculate_one_rdf {
+
+	#<
+	#? A subroutine to calculate the radial distribution of one group
+	#  about a reference point or each atom in another group
+	#; Requires: Reference group, Target group, various fully-qualified variables
+	#; Returns: A list of all distances in this RDF
+	#>
+	
+	my $refgrp = $_[0];
+	my $tgtgrp = $_[1];
+	
+	my $anum;
+	my $arg;
+	my $arg_starttime;
+	my $bin;
+	my $cell;
+	my $distance;
+	my $fast_pdb = 0;
+	my $list;
+	my $mol;
+	my $mol_finishtime;
+	my $mol_runtime;
+	my $mol_starttime;
+	my $mols;
+	my $ratom;
+	my @refpt;
+	my $reslist;
+	my $resnum;
+	my $rnum;
+	my $shortest;
+	my $shortestbin;
+	my $tatom;
+	my $tnum;
+	
+	# For each file, try to read in molecules
+	ARG: foreach $arg (@arguments) {
+		
+		undef $arg_starttime;
+		undef $mol;
+		@$mols = ();
+		
+		# Get the start time for this file
+		$arg_starttime = (times)[0];
+		
+		# Explain what we are doing
+		silico_msg('c', "Reading structure from file: $arg\n");
+		
+		# If the flag 'fast_pdb' is set, and the file is a pdb file...
+		if ($fast_pdb == 1 && $arg =~ /\.pdb$/) {
+			
+			# read the PDB in a 'quick and dirty' fashion to get necessary data out
+			$mols = read_pdb_fast($arg);
+			
+		} else {
+		
+			# Otherwise, read as a standard molecule using 'read_mol_any'
+			$mols = read_mol_any($arg);
+					
+			# If you have read in a standard molecule, we have done the first one,
+			# so we can switch to fast_pdb
+			$fast_pdb = 1;
+		}
+		
+		if (!defined $mols->[0]) {
+			mol_read_error($arg);
+			next;
+		}
+		
+		# For each molecule in this file...
+		MOLECULE: foreach $mol (@$mols) {
+			
+			undef $cell;
+			undef $mol_finishtime;
+			undef $mol_runtime;
+			undef $mol_starttime;
+			
+			# Get the start time for this molecule
+			$mol_starttime = (times)[0];
+			
+			# Increment the 'number of molecules' by one for each molecule
+			++$funclist::numstruct;
+			
+			# Get periodic cell dimensions and use periodic boundary conditions if appropriate
+			# Periodic Boundary Conditions are disabled if the file specifies PBC as off,
+			# or there is no unit cell data in the molecule
+			
+			if ($params::pbc) {
+				
+				if (defined $mol->{CELL}
+					&& $mol->{CELL_ALPHA} == 90
+					&& $mol->{CELL_BETA} == 90
+					&& $mol->{CELL_GAMMA} == 90
+					&& check_data_type($mol->{CELL}[0], 'DECIMAL >0') == 1
+					&& check_data_type($mol->{CELL}[1], 'DECIMAL >0') == 1
+					&& check_data_type($mol->{CELL}[2], 'DECIMAL >0') == 1) {
+					@$cell = ($mol->{CELL}[0], $mol->{CELL}[1], $mol->{CELL}[2]);
+				} else {
+					silico_msg('w', "Molecule's periodic cell is poorly defined!\n",
+							"Use of Periodic Boundary Conditions has been disabled.\n",
+							"Molecule: \"$mol->{NAME}\" (number: $funclist::numstruct)\n");
+					
+					if (!get_flag('very-quiet', 'l')) {
+						
+						silico_msg('q', "Cell dimensions: ");
+						
+						if (!defined $mol->{CELL}) {
+							silico_msg('q', "UNDEFINED");
+						} else {
+							if (defined $mol->{CELL}[0]) {
+								silico_msg('q', "$mol->{CELL}[0]");
+							} else {
+								silico_msg('q', "Undef");
+							}
+							silico_msg('q', " ");
+							if (defined $mol->{CELL}[1]) {
+								silico_msg('q', "$mol->{CELL}[1]");
+							} else {
+								silico_msg('q', "Undef");
+							}
+							silico_msg('q', " ");
+							if (defined $mol->{CELL}[2]) {
+								silico_msg('q', "$mol->{CELL}[2]");
+							} else {
+								silico_msg('q', "Undef");
+							}
+						}
+						silico_msg('q', "\n");
+						
+						silico_msg('q', "Cell angles: ");
+						
+						if (defined $mol->{CELL_ALPHA}) {
+							silico_msg('q', "$mol->{CELL_ALPHA}");
+						} else {
+							silico_msg('q', "undef");
+						}
+						silico_msg('q', ", ");
+						if (defined $mol->{CELL_BETA}) {
+							silico_msg('q', "$mol->{CELL_BETA}");
+						} else {
+							silico_msg('q', "undef");
+						}
+						silico_msg('q', ", ");
+						if (defined $mol->{CELL_GAMMA}) {
+							silico_msg('q', "$mol->{CELL_GAMMA}");
+						} else {
+							silico_msg('q', "undef");
+						}
+						silico_msg('q', "\n");
+					}
+				}				
+			}
+
+			# Print some summary information about this molecule
+			silico_msg('c', "Molecule: $mol->{NAME} (number $funclist::numstruct)\n");
+			
+			# If we have asked to do summing and averaging over each atom
+			# in the reference group...
+			if ($funclist::averaging eq 'atoms' || $funclist::averaging eq 'none') {
+				
+				undef $rnum;
+				
+				# For each atom in the reference group, set the centre of mass to
+				# this atom's coordinates, and work out the RDF
+				foreach $rnum (@{$params::index->{$refgrp}}) {
+					
+					undef $ratom;	
+					undef $shortest;
+					undef $shortestbin;
+					undef $tnum;
+					
+					$ratom = $mol->{ATOMS}[$rnum-1];
+					
+					foreach $tnum (@{$params::index->{$tgtgrp}}) {
+												
+						undef $bin;
+						undef $distance;
+						undef $tatom;
+											
+						next if $tnum == $rnum;
+						
+						$tatom = $mol->{ATOMS}[$tnum-1];
+						
+						if (defined $cell) {
+							$distance = sqrt(distance_periodic_sq($ratom, $tatom, $cell));
+						} else {
+							$distance = distance($ratom, $tatom);
+						}
+												
+						next if (defined $params::cut_max && $distance > $params::cut_max);
+						next if (defined $params::cut_min && $distance < $params::cut_min);
+						
+						$bin = calculate_bin($distance);
+						next if (defined $params::cut_max && $bin > $params::cut_max/$params::binsize);
+						next if (defined $params::cut_min && $bin < $params::cut_min/$params::binsize);
+						
+						if ($funclist::nearest) {
+							if (!defined $shortest || $distance < $shortest) {
+								$shortest = $distance;
+								$shortestbin = $bin;
+							}
+							# else, do nothing
+						} else {
+							++$funclist::bins->{$tgtgrp}[$bin];
+							$funclist::largest_bin_used = $bin if $bin > $funclist::largest_bin_used;
+						}
+					}
+					
+					if ($funclist::nearest) {
+						++$funclist::bins->{$tgtgrp}[$shortestbin];
+						$funclist::largest_bin_used = $shortestbin if $shortestbin > $funclist::largest_bin_used;
+					}
+				}
+			}
+		
+			# Otherwise, if we are doing straight 'centre of mass averaging',
+			elsif ($funclist::averaging eq 'com') {
+				
+				undef $ratom;
+				@refpt = ();
+				undef $reslist;
+				undef $resnum;
+				undef $shortest;
+				undef $shortestbin;
+				undef $tnum;
+			
+				if (defined $refgrp) {
+					
+					undef $anum;
+					undef $list;
+					
+					# ...pushing all atoms in the reference group into a dedicated list...
+					foreach $anum (@{$params::index->{$refgrp}}) {
+						push @$list, $mol->{ATOMS}[$anum - 1];
+					}
+					
+					# ...and then calculating the centre of mass of atoms in the list
+					@refpt = molecule_centre_of_mass($mol, $list);
+				} else {
+					# If there is no reference group defined, calculate the centre of mass
+					# for the entire molecule
+					@refpt = molecule_centre_of_mass($mol);
+				}
+				
+				# If we have asked to do 'centre of mass' averaging, we need centre of mass data
+				# So if this is not there, print a warning
+				if (!defined $refpt[0] || !defined $refpt[1] || !defined $refpt[2]) {
+					silico_msg('e', "No centre of mass is defined for this molecule!\n",
+							"File: $arg, Molecule: $funclist::numstruct (\"$mol->{NAME}\")\n",
+							"Skipping.");
+					next MOLECULE;
+				}
+				
+				# Print the centre of mass information
+				silico_msg('c', "Centre of mass: ");
+					foreach (@refpt) {
+						silico_msg('c', "$_ ");
+					}
+				silico_msg('c', "\n",
+						"\n");
+				
+				# Add a dummy atom to mark the reference point
+				$reslist = molecule_get_residues($mol);
+				@$reslist = sort {$a->[0]{SUBID} <=> $b->[0]{SUBID}} @$reslist;
+				$resnum = $reslist->[$#{$reslist}][0]{SUBID};
+				
+				$ratom = mol_add_atom($mol, "RP", "Du", @refpt, "REF", $resnum+1);
+				
+				foreach $tnum (@{$params::index->{$tgtgrp}}) {
+					
+					undef $bin;		
+					undef $distance;
+					undef $tatom;
+					
+					$tatom = $mol->{ATOMS}[$tnum-1];
+					
+					if (defined $cell) {
+						$distance = sqrt(distance_periodic_sq($ratom, $tatom, $cell));
+					} else {
+						$distance = distance($ratom, $tatom);
+					}
+					
+					next if (defined $params::cut_max && $distance > $params::cut_max);
+					next if (defined $params::cut_min && $distance < $params::cut_min);
+					
+					$bin = calculate_bin($distance);
+					next if (defined $params::cut_max && $bin > $params::cut_max/$params::binsize);
+					next if (defined $params::cut_min && $bin < $params::cut_min/$params::binsize);
+					
+					if ($funclist::nearest) {
+						if (!defined $shortest || $distance < $shortest) {
+							$shortest = $distance;
+							$shortestbin = $bin;
+						}
+						# else, do nothing
+					} else {
+						++$funclist::bins->{$tgtgrp}[$bin];
+						$funclist::largest_bin_used = $bin if $bin > $funclist::largest_bin_used;
+					}
+				}
+				
+				if ($funclist::nearest) {
+					++$funclist::bins->{$tgtgrp}[$shortestbin];
+					$funclist::largest_bin_used = $shortestbin if $shortestbin > $funclist::largest_bin_used;
+				}
+			}
+						
+			# Get the finish time for this molecule
+			$mol_finishtime = (times)[0];
+			$mol_runtime = $mol_finishtime - $mol_starttime;
+			# Print out a message telling how long the RDF took for this molecule
+			$mol_runtime = calc_human_readable_time($mol_runtime);
+			silico_msg('c', "Time taken to calculate RDF of $tgtgrp around $refgrp for molecule $funclist::numstruct: $mol_runtime\n");
+		}
+	}	
+}
+
+
+sub calculate_bin {
+
+	#<
+	#? Calculate the bin to which a given distance belongs
+	#; Requires: distance (scalar)
+	#; Returns: bin number (scalar)
+	#>
+	
+	my $distance = $_[0];
+	
+	my $bin;
+	
+	# Get a number for the bin this atom goes in
+	$bin = sprintf("%.0f", ($distance/$params::binsize));
+		
+	# Finally, return this number
+	return $bin;
+
+}
+
+########################
+# Writing output files #
+########################
+
+sub write_rdf_output_file {
+
+	my $outfile_base = $_[0];
+	my $refgrp = $_[1];
+	my $funclist = $_[2];
+	
+	my $group;
+	my $i;
+	my $largest_bin;
+	my $smallest_bin;
+	
+	use vars qw($Pi);
+		
+	# Open the output file specified in the flags
+	# If this file can't be created or opened, print an error and exit
+	open (OUTFILE, ">$outfile_base.dat") || file_write_error("$outfile_base.dat", 1);
+	
+	print OUTFILE "# Radial Distribution Function\n";
+	print OUTFILE "# Generated on ".`date`;
+	print OUTFILE "#\n";
+	print OUTFILE "# Index file: $params::indexfile\n";
+	print OUTFILE "# Bin size: $params::binsize Å\n";
+	print OUTFILE "# Maximum Cutoff Distance: $params::cut_max Å\n" if (defined $params::cut_max);
+	print OUTFILE "# Minimum Cutoff Distance: $params::cut_min Å\n" if (defined $params::cut_min);
+	
+	print OUTFILE "# Units: Atom count\n" if ($funclist::units eq 'count');
+	print OUTFILE "# Units: Atom density (atoms/Å^3)\n" if ($funclist::units eq 'density');
+	print OUTFILE "# Units: Relative probability (1 = 'normal' probability)\n" if ($funclist::units eq 'prob');
+	
+	print OUTFILE "# Calculating RDF's to the Centre of Mass of group $refgrp\n" if ($funclist::averaging eq 'com');
+	print OUTFILE "# Calculating the average of RDF's about all atoms in group $refgrp\n" if ($funclist::averaging eq 'atoms');
+	print OUTFILE "# Calculating the sum of RDF's about all atoms in group $refgrp\n" if $funclist::averaging eq 'none';
+	
+	print OUTFILE "# Using Periodic Boundary Conditions\n" if $params::pbc;
+	print OUTFILE "# Not Using Periodic Boundary Conditions\n" if ($params::pbc == 0);
+		
+	print OUTFILE "#\n";
+	
+	# Print the text "#Bin" to the output file - tab separated text
+	print OUTFILE "#Bin\t";
+	
+	# Print a header for each group to the output file - tab separated text
+	foreach $group (sort keys %$funclist::bins) {
+		print OUTFILE "$group\t";
+	}
+	
+	print OUTFILE "\n";
+	
+	# Compute the smallest bin
+	if (defined $params::cut_min) {
+		$smallest_bin = calculate_bin($params::cut_min) || 0;
+	}
+	if (defined $params::cut_max) {
+		$largest_bin = calculate_bin($params::cut_max);
+	}
+	
+	# Go to the largest bin allowed, or the largest bin actually used,
+	# whichever is the smaller.
+	for ($i = $smallest_bin; $i <= $funclist::largest_bin_used+1; ++$i) {
+	
+		# Don't do any more if we're already past the largest allowed bin.
+		# There is no point.
+		last if $largest_bin && $i > $largest_bin;
+		
+		my $group;
+		
+		# Print the radius of the bin
+		print OUTFILE (($i * $params::binsize)."\t");
+	
+		# For each index group
+		foreach $group (sort keys %$funclist::bins) {
+		
+			my $density;
+			my $function;
+			my $refcount;
+			my $val;
+			my $vol;
+			
+			foreach $function (@{$funclist->{FUNCTIONS}}) {
+				next if $group ne $function->[0];
+				$density = $function->[1] if ($function->[1]);
+				$refcount = $function->[2] if ($function->[2]);
+			}
+			
+			$val = $funclist::bins->{$group}[$i] || 0;
+			# Correct for number of structures
+			$val = $val / $funclist::numstruct;	
+		
+			# Correct for bin volume
+			# First, calculate the volume of the bin (outside sphere minus inside sphere)
+			if ($i == $smallest_bin) {
+				$vol = 4/3 * $Pi * (((($i+0.5)*$params::binsize)**3)-($params::cut_min**3));
+			} elsif (defined $largest_bin && $i == $largest_bin) {
+				$vol = 4/3 * $Pi * (($params::cut_max**3)-((($i-0.5)*$params::binsize)**3));
+			} else {
+				$vol = 4/3 * $Pi * (((($i+0.5)*$params::binsize)**3)-((($i-0.5)*$params::binsize)**3)); 
+			}
+			# Now, the value is divided by the volume
+			$val = $val / $vol if ($funclist::units ne 'count');
+	
+			# If probabilities are being used, correct for normal density
+			$val = $val / $density if ($funclist::units eq 'prob');
+			
+			$val = $val / $refcount if ($funclist::averaging eq 'atoms');
+			
+			print OUTFILE "$val\t";
+			
+		}
+		
+		print OUTFILE "\n";
+	}
+	
+	close OUTFILE;
+}
+
+sub write_rdf_stats_file {
+
+	# ALERT: DISABLED AND WILL NOT FUNCTION CORRECTLY
+	
+	my $outfile_base = $_[0];
+	my $refgrp = $_[1];
+	my $funclist = $_[2];
+	
+	my $function;
+	
+	# Open the output file specified in the flags
+	# If this file can't be created or opened, print an error and exit
+	open (STATS, ">$outfile_base"."_stats.dat") || file_write_error("$outfile_base"."_stats.dat", 1);
+	
+	print STATS "# Radial Distribution Function: Distance Statistics Supplemental\n";
+	print STATS "# Generated on ".`date`;
+	print STATS "#\n";
+	print STATS "# Index file: $params::indexfile\n";
+	print STATS "# Maximum Cutoff Distance: $params::cut_max Å\n" if (defined $params::cut_max);
+	print STATS "# Minimum Cutoff Distance: $params::cut_min Å\n" if (defined $params::cut_min);
+	
+	print STATS "# Calculating RDF's to the Centre of Mass of group $refgrp\n" if ($funclist::averaging eq 'com');
+	print STATS "# Calculating RDF's about all atoms in group $refgrp\n"
+		if ($funclist::averaging eq 'atoms' || $funclist::averaging eq 'none');
+	
+	print STATS "# Using Periodic Boundary Conditions\n" if $params::pbc;
+	print STATS "# Not Using Periodic Boundary Conditions\n" if ($params::pbc == 0);
+		
+	print STATS "\n";
+	
+	# Print the text "#Bin" to the output file - tab separated text
+	print STATS "Group";
+	
+	# Print a header for each group to the output file - tab separated text
+	foreach $function (@{$funclist->{FUNCTIONS}}) {
+		print STATS "\t$function->[0]";
+	}
+	
+	print STATS "\n";
+	
+	# Calculate means
+	rdf_calculate_means($funclist);
+	
+	# Calculate standard deviations
+	rdf_calculate_sd($funclist);
+	
+	close STATS;
+}
+
+sub rdf_calculate_means {
+	
+	# ALERT: DISABLED AND WILL NOT FUNCTION CORRECTLY
+	
+	my $funclist = $_[0];
+	
+	my $function;
+	
+	print STATS "Mean (Å)";
+	
+	foreach $function (@{$funclist->{FUNCTIONS}}) {
+	
+		my $all_distances = $function->[3];
+		my $mean;
+		
+		$mean = mean(@$all_distances);
+		
+		printf STATS "\t%.6f", $mean;
+	}
+	
+	print STATS "\n";
+}
+
+sub rdf_calculate_sd {
+	
+	# ALERT: DISABLED AND WILL NOT FUNCTION CORRECTLY
+	
+	my $funclist = $_[0];
+	
+	my $function;
+	
+	print STATS "S.D. (Å)";
+	
+	foreach $function (@{$funclist->{FUNCTIONS}}) {
+	
+		my $all_distances = $function->[3];
+		my $sd;
+		
+		$sd = standard_deviation_bias_corrected(@$all_distances);
+		
+		printf STATS "\t%.6f", $sd;
+	}
+	
+	print STATS "\n";
+}
+
+################
+# Silico Setup #
+################
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

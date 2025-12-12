@@ -1,0 +1,71 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! opls_amino_acid_atoms.dat
+#? Data file containing mappings of amino acid atoms
+#  to OPLS-AA atom types. This file assumes that atoms
+#  have been named according to the standards in the file
+#  amino_acids_smiles.dat (derived in turn from the PDB
+#  standard).
+#. Not all amino acid atoms have been included here; only those
+#  with OPLS-AA types that would not otherwise be assigned to
+#  them.
+#. Hydrogens are not included.
+#>
+
+# Res	S B	Name	Type
+# Histidine
+HIS	? ?	CB	505
+# Histidine (HIP)
+HIS	0 ?	CG	510
+HIS	0 ?	ND1	512
+HIS	0 ?	CE1	509
+HIS	0 ?	NE2	512
+HIS	0 ?	CD2	510	
+# Histidine (HID)
+HIS	D ?	CG	508
+HIS	D ?	ND1	503
+HIS	D ?	CE1	506
+HIS	D ?	NE2	511
+HIS	D ?	CD2	507
+# Histidine (HIE)
+HIS	E ?	CG	507
+HIS	E ?	ND1	511
+HIS	E ?	CE1	506
+HIS	E ?	NE2	503
+HIS	E ?	CD2	508
+# Proline
+PRO	? ?	CA	246
+PRO	? ?	N	239
+PRO	? ?	CB	136
+PRO	? ?	CG	136
+PRO	? ?	CD	245	
+# Tryptophan
+TRP	? ?	CB	2016	#136
+TRP	? ?	CG	500
+TRP	? ?	CD1	514
+TRP	? ?	CD2	501
+TRP	? ?	NE1	503
+TRP	? ?	CE2	502
+TRP	? ?	CE3	145
+TRP	? ?	CZ2	145
+TRP	? ?	CZ3	145
+TRP	0 ?	CH2	145

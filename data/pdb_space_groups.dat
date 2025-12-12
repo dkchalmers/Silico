@@ -1,0 +1,534 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! pdb_space_groups.dat
+#? Data file containing mappings of Silico space groups to their
+#  corresponding PDB format strings.
+#>
+
+# Triclinic
+0011	P 1
+0021	P -1
+
+# Monoclinic
+0031	P 1 2 1
+0033	P 1 1 2
+0041	P 1 21 1
+0043	P 1 1 21
+0051	C 1 2 1
+0052	A 1 2 1
+0053	B 1 1 2
+0054	A 1 1 2
+0061	P 1 m 1
+0063	P 1 1 m
+0071	P 1 c 1
+0072	P 1 a 1
+0073	P 1 1 b
+0074	P 1 1 a
+0081	C 1 m 1
+0082	A 1 m 1
+0083	B 1 1 m
+0084	A 1 1 m
+0091	C 1 c 1
+0092	A 1 a 1
+0093	B 1 1 b
+0094	A 1 1 a
+0101	P 1 2/m 1
+0103	P 1 1 2/m
+0111	P 1 21/m 1
+0113	P 1 1 21/m
+0121	C 1 2/m 1
+0122	A 1 2/m 1
+0123	B 1 1 2/m
+0124	A 1 1 2/m
+0131	P 1 2/c 1
+0132	P 1 2/a 1
+0133	P 1 1 2/b
+0134	P 1 1 2/a
+0141	P 1 21/c 1
+0142	P 1 21/a 1
+0143	P 1 1 21/b
+0144	P 1 1 21/a
+0151	C 1 2/c 1
+0152	A 1 2/a 1
+0153	B 1 1 2/b
+0154	A 1 1 2/a
+
+# Orthorhombic
+0161	P 2 2 2
+0171	P 2 2 21
+0172	P 2 21 2
+0173	P 21 2 2
+0181	P 21 21 2
+0182	P 2 21 21
+0183	P 21 2 21
+0191	P 21 21 21
+0201	C 2 2 21
+0202	A 21 2 2
+0203	B 2 21 2
+0211	C 2 2 2
+0212	A 2 2 2
+0213	B 2 2 2
+0221	F 2 2 2
+0231	I 2 2 2
+0241	I 21 21 21
+0251	P m m 2
+0252	P 2 m m
+0253	P m 2 m
+0261	P m c 21
+0262	P 21 m a
+0263	P b 21 m
+0264	P m 21 b
+0265	P c m 21
+0266	P 21 a m
+0271	P c c 2
+0272	P 2 a a
+0273	P b 2 b
+0281	P m a 2
+0282	P 2 m b
+0283	P c 2 m
+0284	P m 2 a
+0285	P b m 2
+0286	P 2 c m
+0291	P c a 21
+0292	P 21 a b
+0293	P c 21 b
+0294	P b 21 a
+0295	P b c 21
+0296	P 21 c a
+0301	P n c 2
+0302	P 2 n a
+0303	P b 2 n
+0304	P n 2 b
+0305	P c n 2
+0306	P 2 a n
+0311	P m n 21
+0312	P 21 m n
+0313	P n 21 m
+0314	P m 21 n
+0315	P n m 21
+0316	P 21 n m
+0321	P b a 2
+0322	P 2 c b
+0323	P c 2 a
+0331	P n a 21
+0332	P 21 n b
+0333	P c 21 n
+0334	P n 21 a
+0335	P b n 21
+0336	P 21 c n
+0341	P n n 2
+0342	P 2 n n
+0343	P n 2 n
+0351	C m m 2
+0352	A 2 m m
+0353	B m 2 m
+0361	C m c 21
+0362	A 21 m a
+0363	B b 21 m
+0364	B m 21 b
+0365	C c m 21
+0366	A 21 a m
+0371	C c c 2
+0372	A 2 a a
+0373	B b 2 b
+0381	A m m 2
+0382	B 2 m m
+0383	C m 2 m
+0384	A m 2 m
+0385	B m m 2
+0386	C 2 m m
+0391	A b m 2
+0392	B 2 c m
+0393	C m 2 a
+0394	A c 2 m
+0395	B m a 2
+0396	C 2 m b
+0401	A m a 2
+0402	B 2 m b
+0403	C c 2 m
+0404	A m 2 a
+0405	B b m 2
+0406	C 2 c m
+0411	A b a 2
+0412	B 2 c b
+0413	C c 2 a
+0414	A c 2 a
+0415	B b a 2
+0416	C 2 c b
+0421	F m m 2
+0422	F 2 m m
+0423	F m 2 m
+0431	F d d 2
+0432	F 2 d d
+0433	F d 2 d
+0441	I m m 2
+0442	I 2 m m
+0443	I m 2 m
+0451	I b a 2
+0452	I 2 c b
+0453	I c 2 a
+0461	I m a 2
+0462	I 2 m b
+0463	I c 2 m
+0464	I m 2 a
+0465	I b m 2
+0466	I 2 c m
+0471	P m m m
+0481	P n n n
+0491	P c c m
+0492	P m a a
+0493	P b m b
+0501	P b a n
+0502	P n c b
+0503	P c n a
+0511	P m m a
+0512	P b m m
+0513	P m c m
+0514	P m a m
+0515	P m m b
+0516	P c m m
+0521	P n n a
+0522	P b n n
+0523	P n c n
+0524	P n a n
+0525	P n n b
+0526	P c n n
+0531	P m n a
+0532	P b m n
+0533	P n c m
+0534	P m a n
+0535	P n m b
+0536	P c n m
+0541	P c c a
+0542	P b a a
+0543	P b c b
+0544	P b a b
+0545	P c c b
+0546	P c a a
+0551	P b a m
+0552	P m c b
+0553	P c m a
+0561	P c c n
+0562	P n a a
+0563	P b n b
+0571	P b c m
+0572	P m c a
+0573	P b m a
+0574	P c m b
+0575	P c a m
+0576	P m a b
+0581	P n n m
+0582	P m n n
+0583	P n m n
+0591	P m m n
+0592	P n m m
+0593	P m n m
+0601	P b c n
+0602	P n c a
+0603	P b n a
+0604	P c n b
+0605	P c a n
+0606	P n a b
+0611	P b c a
+0613	P c a b
+0621	P n m a
+0622	P b n m
+0623	P m c n
+0624	P n a m
+0625	P m n b
+0626	P c m n
+0631	C m c m
+0632	A m m a
+0633	B b m m
+0634	B m m b
+0635	C c m m
+0636	A m a m
+0641	C m c a
+0642	A b m a
+0643	B b c m
+0644	B m a b
+0645	C c m b
+0646	A c a m
+0651	C m m m
+0652	A m m m
+0653	B m m m
+0661	C c c m
+0662	A m a a
+0663	B b m b
+0671	C m m a
+0672	A b m m
+0673	B m c m
+0674	B m a m
+0675	C m m b
+0676	A c m m
+0681	C c c a
+0682	A b a a
+0683	B b c b
+0684	B b a b
+0685	C c c b
+0686	A c a a
+0691	F m m m
+0701	F d d d
+0711	I m m m
+0721	I b a m
+0722	I m c b
+0723	I c m a
+0731	I b c a
+0733	I c a b
+0741	I m m a
+0742	I b m m
+0743	I m c m
+0744	I m a m
+0745	I m m b
+0746	I c m m
+
+# Tetragonal
+0751	P 4
+0752	C 4
+0761	P 41
+0762	C 41
+0771	P 42
+0772	C 42
+0781	P 43
+0782	C 43
+0791	I 4
+0792	F 4
+0801	I 41
+0802	F 41
+0811	P -4
+0812	C -4
+0821	I -4
+0822	F -4
+0831	P 4/m
+0832	C 4/m
+0841	P 42/m
+0842	C 42/m
+0851	P 4/n
+0852	C 4/a
+0861	P 42/n
+0862	C 42/a
+0871	I 4/m
+0872	F 4/m
+0881	I 41/a
+0882	F 41/d
+0891	P 4 2 2
+0892	C 4 2 2
+0901	P 4 21 2
+0902	C 4 2 21
+0911	P 41 2 2
+0912	C 41 2 2
+0921	P 41 21 2
+0922	C 41 2 21
+0931	P 42 2 2
+0932	C 42 2 2
+0941	P 42 21 2
+0942	C 42 2 21
+0951	P 43 2 2
+0952	C 43 2 2
+0961	P 43 21 2
+0962	C 43 2 21
+0971	I 4 2 2
+0972	F 4 2 2
+0981	I 41 2 2
+0982	F 41 2 2
+0991	P 4 m m
+0992	C 4 m m
+1001	P 4 b m
+1002	C 4 m b
+1011	P 42 c m
+1012	C 42 m c
+1021	P 42 n m
+1022	C 42 m n
+1031	P 4 c c
+1032	C 4 c c
+1041	P 4 n c
+1042	C 4 c n
+1051	P 42 m c
+1052	C 42 c m
+1061	P 42 b c
+1062	C 42 c b
+1071	I 4 m m
+1072	F 4 m m
+1081	I 4 c m
+1082	F 4 m c
+1091	I 41 m d
+1092	F 41 d m
+1101	I 41 c d
+1102	F 41 d c
+1111	P -4 2 m
+1112	C -4 m 2
+1121	P -4 2 c
+1122	C -4 c 2
+1131	P -4 21 m
+1132	C -4 m 21
+1141	P -4 21 c
+1142	C -4 c 21
+1151	P -4 m 2
+1152	C -4 2 m
+1161	P -4 c 2
+1162	C -4 2 c
+1171	P -4 b 2
+1172	C -4 2 b
+1181	P -4 n 2
+1182	C -4 2 b
+1191	I -4 m 2
+1192	F -4 2 m
+1201	I -4 c 2
+1202	F -4 2 c
+1211	I -4 2 m
+1212	F -4 m 2
+1221	I -4 2 d
+1222	F -4 d 2
+1231	P 4/m m m
+1232	C 4/m m m
+1241	P 4/m c c
+1242	C 4/m c c
+1251	P 4/n b m
+1252	C 4/a m b
+1261	P 4/n n c
+1262	C 4/a c n
+1271	P 4/m b m
+1272	C 4/m m b
+1281	P 4/m n c
+1282	C 4/m c n
+1291	P 4/n m m
+1292	C 4/a m m
+1301	P 4/n c c
+1302	C 4/a c c
+1311	P 42/m m c
+1312	C 42/m c m
+1321	P 42/m c m
+1322	C 42/m m c
+1331	P 42/n b c
+1332	C 42/a c b
+1341	P 42/n n m
+1342	C 42/a m n
+1351	P 42/m b c
+1352	C 42/m b c
+1361	P 42/m n m
+1362	C 42/m m n
+1371	P 42/n m c
+1372	C 42/a c m
+1381	P 42/n c m
+1382	C 42/a m c
+1391	I 4/m m m
+1392	F 4/m m m
+1401	I 4/m c m
+1402	F 4/m m c
+1411	I 41/a m d
+1412	F 41/d d m
+1421	I 41/a c d
+1422	F 41/d d c
+
+# Trigonal
+1431	P 3
+1441	P 31
+1451	P 32
+1461	R 3
+1471	P -3
+1481	R -3
+1491	P 3 1 2
+1501	P 3 2 1
+1511	P 31 1 2
+1521	P 31 2 1
+1531	P 32 1 2
+1541	P 32 2 1
+1551	R 3 2
+1561	P 3 m 1
+1571	P 3 1 m
+1581	P 3 c 1
+1591	P 3 1 c
+1601	R 3 m
+1611	R 3 c
+1621	P -3 1 m
+1631	P -3 1 c
+1641	P -3 m 1
+1651	P -3 c 1
+1661	R -3 m
+1671	R -3 c
+
+# Hexagonal
+1681	P 6
+1691	P 61
+1701	P 65
+1711	P 62
+1721	P 64
+1731	P 63
+1741	P -6
+1751	P 6/m
+1761	P 63/m
+1771	P 6 2 2
+1781	P 61 2 2
+1791	P 65 2 2
+1801	P 62 2 2
+1811	P 64 2 2
+1821	P 63 2 2
+1831	P 6 m m
+1841	P 6 c c
+1851	P 63 c m
+1861	P 63 m c
+1871	P -6 m 2
+1881	P -6 c 2
+1891	P -6 2 m
+1901	P -6 2 c
+1911	P 6/m m m
+1921	P 6/m c c
+1931	P 63/m c m
+1941	P 63/m m c
+
+# Cubic
+1951	P 2 3
+1961	F 2 3
+1971	I 2 3
+1981	P 21 3
+1991	I 21 3
+2001	P m -3
+2011	P n -3
+2021	F m -3
+2031	F d -3
+2041	I m -3
+2051	P a -3
+2061	I a -3
+2071	P 4 3 2
+2081	P 42 3 2
+2091	F 4 3 2
+2101	F 41 3 2
+2111	I 4 3 2
+2121	P 43 3 2
+2131	P 41 3 2
+2141	I 41 3 2
+2151	P -4 3 m
+2161	F -4 3 m
+2171	I -4 3 m
+2181	P -4 3 n
+2191	F -4 3 c
+2201	I -4 3 d
+2211	P m -3 m
+2221	P n -3 n
+2231	P m -3 n
+2241	P n -3 m
+2251	F m -3 m
+2261	F m -3 c
+2271	F d -3 m
+2281	F d -3 c
+2291	I m -3 m
+2301	I a -3 d

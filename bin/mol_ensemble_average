@@ -1,0 +1,174 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_ensemble_average
+#? Given a number of molecules of the same composition as input,
+#  write out a molecule where the position of each atom is averaged
+#  over the whole ensemble.
+#F
+#; -l Consider the largest fragment only
+#; -t Translate the molecule (or largest fragment if -l) to centre of mass
+#SF
+#. Created: BPR 2007
+#. $Revision: 1.7.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $avmol;
+my $c;
+my $ens;
+my $filecount;
+my $fmolcount;
+my $gmolcount;
+my $i;
+my $mol;
+my $mols;
+my $split;
+my $starttime = (times)[0];
+my $translate;
+my @xlist;
+my @ylist;
+my @zlist;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_ensemble_average", '$Revision: 1.7.2.1.2.1 $');
+
+require silico_split;
+
+$split = make_flag('l', 'largest-fragment', "Consider largest fragment only");
+$translate = make_flag('t', 'translate', "Translate the average molecule to [0, 0, 0]");
+
+@arguments = get_arguments2('>=1');
+
+@$ens = ();
+$filecount = 0;
+$gmolcount = 0;
+
+foreach $arg (@arguments) {
+	
+	undef $mol;
+	@$mols = ();
+	
+	++$filecount;
+	$fmolcount = 0;
+	
+	silico_msg('c', "File: $arg\n");
+	$mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach $mol (@$mols) {
+		++$fmolcount;
+		++$gmolcount;
+		
+		if ($split) {
+			$mol = molecule_split_keeping_largest_mol($mol);
+		}
+		
+		if (!defined $avmol) {
+			$avmol = deep_copy($mol);
+			molecule_check_and_fix_connectivity($avmol);
+		} elsif ($#{$mol->{ATOMS}} != $#{$avmol->{ATOMS}}) {
+			silico_msg('w', "Molecule has a different number of atoms to the first molecule!\n",
+					"Molecule $fmolcount in file $filecount ($gmolcount overall)\n",
+					"This molecule will be skipped.\n");
+			next;
+		}
+		
+		++$c;
+		
+		for ($i = 0; $i <= $#{$mol->{ATOMS}}; ++$i) {
+			$xlist[$i] += $mol->{ATOMS}[$i]{X};
+			$ylist[$i] += $mol->{ATOMS}[$i]{Y};
+			$zlist[$i] += $mol->{ATOMS}[$i]{Z};
+		}
+	}
+}
+
+for ($i = 0; $i <= $#{$avmol->{ATOMS}}; ++$i) {
+	$xlist[$i] /= $c;
+	$ylist[$i] /= $c;
+	$zlist[$i] /= $c;
+	
+	$avmol->{ATOMS}[$i]{X} = $xlist[$i];
+	$avmol->{ATOMS}[$i]{Y} = $ylist[$i];
+	$avmol->{ATOMS}[$i]{Z} = $zlist[$i];
+}
+
+if ($translate) {
+	molecule_trans_to_centre($avmol);
+}
+
+@$ens = ($avmol);
+
+set_default_oappend('average');
+write_mol_any($ens);
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

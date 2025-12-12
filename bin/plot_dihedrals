@@ -1,0 +1,316 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! plot_dihedrals
+#? Wrapper script to plot dihedral potentials using gnuplot. 
+#; Requires: Either an input file, or a number of dihedrals to plot
+#; Returns: Plot
+#. $Revision: 1.20.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @arguments;
+my $coeff;
+my $ff;
+my $gnuplot_status;
+my $i;
+my $number;
+my $reply;
+my $rm_status;
+my @tors;
+my $type;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("plot_dihedrals", '$Revision: 1.20.2.1.2.1 $');
+
+$number = make_flag('n', 'number-of-dihedrals', "Number of dihedrals to plot", 1, 1, undef, "integer > 0");
+$ff = make_flag('f', 'force-field', "Force field", 1, "opls");
+$type = make_flag('t', 'function-type', "Function type", 1, "fourier");
+$coeff = make_flag('c', 'number-of-coefficients', "Number of coefficients", 1, 5);
+
+@arguments = get_arguments2(undef, 'none');
+
+# Shut whinges up
+$Silico::debug = $Silico::debug;
+$Silico::PROG = $Silico::PROG;
+
+if (defined $arguments[0]) {
+
+	$reply = prompt(	"The argument reading is included so we can read a list of\n",
+				"dihedrals from a file, but it is not ready yet.\n",
+				"\n",
+				"Do you want to enter via the command line? [y/n]: ");
+	
+	while (1) {
+	
+		$reply =~ s/ //g;
+		
+		$reply = lc $reply;
+		
+		$reply = 'y' if $reply eq 'yes';
+		$reply = 'n' if $reply eq 'no';
+		
+		last if ($reply eq 'y' || $reply eq 'n');
+		
+		$reply = prompt(	"Inappropriate response.\n",
+					"Do you want to enter via the command line? [y/n]: ");
+		
+	}
+	
+	if ($reply eq 'n') {
+		silico_msg('v', "Okay, plot_dihedrals will now exit.\n");
+		exit;
+	}
+	
+	if ($reply eq 'y') {
+		silico_msg('v', "Switching to command line mode.\n");
+		@arguments = ();
+	}
+}
+
+
+# Read the dihedrals from the command line
+if (!defined $arguments[0]) {
+
+	for ($i = 0; $i < $number; ++$i) {
+	
+		my $tor;
+		
+		if ($ff eq 'opls' && $type eq 'fourier' && $coeff == 5) {
+			print heading("Dihedral $i\n");
+			$tor = read_opls_dih_from_command_line();
+			push @tors, $tor;
+		} else {
+			print "I'm sorry, no instructions have been written for this type of dihedral.\n";
+			print "plot_dihedrals will now exit\n";
+			exit;
+		}
+	}
+}
+
+# Write the gnuplot file
+
+write_gnuplot_file();
+
+# Do the plotting
+
+$gnuplot_status = system ("gnuplot -persist gpdp.inp");
+
+if ($gnuplot_status != 0) {
+
+	silico_msg('d', "Execution of gnuplot failed!\n");
+}
+
+# Remove the gnuplot instruction file
+
+if (!$Silico::debug) {
+
+	$rm_status = system ("rm gpdp.inp");
+
+	if ($rm_status != 0) {
+
+		silico_msg('d', "Execution of system rm command failed!\n");
+	}
+}
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub read_opls_dih_from_command_line {
+
+	my $V0 = 0;
+	my $V0_new;
+	my $V1;
+	my $V2;
+	my $V3;
+	my $V4;
+	
+	my $tor;
+	
+	print "V0 (offset) [$V0]: ";
+	
+	while (1) {
+	
+		$V0_new = <STDIN>;
+		chomp $V0_new;
+		$V0_new =~ s/ //g;
+		
+		last if ($V0_new =~ /^\s*$/);
+		
+		if (check_data_type($V0_new, ' DECIMAL ') == 1) {
+			$V0 = $V0_new;
+			last;
+		} else {
+			print "Inappropriate value for Fourier coefficient V0.\n";
+			print "Should be a decimal number.\n";
+			print "V0 (offset) [$V0]: ";
+		}
+	}
+	
+	while (1) {
+		print "V1: ";
+		$V1 = <STDIN>;
+		chomp $V1;
+		$V1 =~ s/ //g;
+		last if (check_data_type ($V1, 'decimal') == 1);
+		
+		print "Inappropriate value for Fourier coefficient V1.\n";
+		print "Should be a decimal number.\n";
+		print "\n";
+	}
+	while (1) {
+		print "V2: ";
+		$V2 = <STDIN>;
+		chomp $V2;
+		$V2 =~ s/ //g;
+		last if (check_data_type ($V2, 'decimal') == 1);
+		
+		print "Inappropriate value for Fourier coefficient V2.\n";
+		print "Should be a decimal number.\n";
+		print "\n";
+	}
+	while (1) {
+		print "V3: ";
+		$V3 = <STDIN>;
+		chomp $V3;
+		$V3 =~ s/ //g;
+		last if (check_data_type ($V3, 'decimal') == 1);
+		
+		print "Inappropriate value for Fourier coefficient V3.\n";
+		print "Should be a decimal number.\n";
+		print "\n";
+	}
+	while (1) {
+		print "V4: ";
+		$V4 = <STDIN>;
+		chomp $V4;
+		$V4 =~ s/ //g;
+		last if (check_data_type ($V4, 'decimal') == 1);
+		
+		print "Inappropriate value for Fourier coefficient V4.\n";
+		print "Should be a decimal number.\n";
+		print "\n";
+	}
+	
+	@$tor = ($V0, $V1, $V2, $V3, $V4);
+	
+	return $tor;
+}
+
+
+sub write_gnuplot_file {
+
+	my $i = 0;
+	
+	my $tor;
+	my $file = "gpdp.inp";
+
+	# Create the gnuplot file
+	open (GPFILE, ">$file") || file_write_error($file, 1);
+
+	# Title
+	print GPFILE "set title \"".uc($ff)." Dihedral Potential Functions\"\n";
+
+	# X axis
+	print GPFILE "set angle degrees\n";
+	print GPFILE "set xlabel \"phi (degrees)\"\n";
+	print GPFILE "set xtics 90\n";
+
+	# Y axis
+	print GPFILE "set ylabel \"V (kcal/mol)\"\n";
+	
+	# Plot command
+	print GPFILE "plot ";
+	
+	# X axis range
+	print GPFILE "[0:360] ";
+	
+	foreach $tor (@tors) {
+	
+		# Function 1
+		printf GPFILE "%.3f", $tor->[0];
+		print GPFILE "+(";
+		printf GPFILE "%.3f", $tor->[1];
+		print GPFILE "*(1.0+cos(x))/2.0)";
+		print GPFILE "+(";
+		printf GPFILE "%.3f", $tor->[2];
+		print GPFILE "*(1.0-cos(2.0*x))/2.0)";
+		print GPFILE "+(";
+		printf GPFILE "%.3f", $tor->[3];
+		print GPFILE "*(1.0+cos(3.0*x))/2.0)";
+		print GPFILE "+(";
+		printf GPFILE "%.3f", $tor->[4];
+		print GPFILE "*(1.0-cos(4.0*x))/2.0)";
+	
+		# Key entry of 1
+		print GPFILE " t \"$tor->[0], $tor->[1], $tor->[2], $tor->[3], $tor->[4]\"";
+	
+		# Function Delimiter
+		print GPFILE "," if ($i != $#tors);
+		
+		++$i;
+	}
+	
+	# Use lines
+	print GPFILE " with lines\n";
+	
+	close GPFILE;
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

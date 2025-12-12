@@ -1,0 +1,158 @@
+#!/usr/bin/perl -w
+#!/usr/bin/perl -d:NYTProf -w
+
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_pdb
+#? Read any Silico format and write a pdb file
+#F
+#; -de_<alternate_conf> Delete all disorderd (ALT) atoms except those in the specified alternate conformation (default Conformation 'A')
+#; -dl_<value> Delete low occupancy atoms. Atoms with occupancy below <value> are deleted
+#; -model Write each structure as a separate MODEL
+#; --nosingle Do not use single molecule read/write routines
+#; -debug
+#SF
+#. Created: DKC November 1999-2025
+#. $Revision: 1.1.2.2.2.9 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $fr_in;
+my $fr_out;
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("write_pdb", '$Revision: 1.1.2.2.2.9 $');
+
+
+		make_flag('de', 'delete-alt-except', "Delete all disorderd (ALT) atoms except those in the specified alternate conformation", 1, 'A');
+my $dl =	make_flag('dl', 'delete-low-occ', "Delete low occupancy", 1);
+my $model = 	make_flag('model', 'model', "Write each structure as a separate MODEL");
+my $nosingle = 	make_flag(undef, 'nosingle', "Do not use single molecule read/write routines");
+
+
+my @arguments = get_arguments2('>=1');
+
+my $options;
+$options = "MODEL " if $model;
+
+foreach my $arg (@arguments) {
+	
+	silico_msg('c', "File: $arg\n");
+	
+	if (!$nosingle) {
+	
+		while (1) {
+			my $mol = read_mol_single($fr_in, $arg);
+			last if !defined $mol;
+			if ($fr_in->{ERROR}) {
+				silico_msg ('e', "Could not read file $arg. Skipping\n");
+				last;
+			}
+			
+			delete_low_occ($mol, $dl) if $dl;
+			molecule_check_and_fix_connectivity($mol);
+			write_mol_single($fr_out, $mol, undef, 'pdb', undef, $options);
+		}
+
+		close_molfile($fr_out);
+
+	} else {
+		my $mols = read_mol_any($arg);
+		if (!defined $mols->[0]) {
+			mol_read_error($arg);
+			next;
+		}
+		foreach my $mol (@$mols) {
+			delete_low_occ($mol, $dl) if $dl;
+			molecule_check_and_fix_connectivity($mol);
+		}
+
+		write_pdb($mols, undef, $options);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub delete_low_occ {
+
+	my $mol = $_[0];
+	my $min_occ = $_[1];
+
+	my $count = 0;
+	foreach my $atom (atoms($mol)) {
+	
+		if ($atom->{OCC} < $min_occ) {
+			molecule_delete_atom($mol, $atom->{NUM}-1);
+			print "Deleting atom Num: $atom->{NUM} name: $atom->{NAME} occ: $atom->{OCC}\n";
+			++$count;
+		}
+	}
+	
+	silico_msg('c', "Deleted $count atoms with occupancy less than $min_occ\n");
+
+	molecule_pack($mol);
+}
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

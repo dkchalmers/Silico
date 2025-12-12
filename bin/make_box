@@ -1,0 +1,137 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! make_box
+#? Produce a box file '<filebase>_box.pdb'.
+#  If the input file has a unit cell predefined, that will be used. Otherwise,
+#  a box will be made large enough to enclose the first molecule.
+#. Unit cells are encoded in some file types, for example Gromacs, Mol2, PDB
+#F
+#; -i Ignore existing unit cell data
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @arguments;
+my @c;
+my $centre;
+my $ens;
+my $filebase;
+my $filename;
+my $ignore;
+my $mol;
+my $rval;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("make_box", '$Revision: 1.18.2.1.2.1 $');
+
+$ignore = make_flag('i', 'ignore', "Ignore existing unit cell data");
+$centre = make_flag('c', 'centre-box', "Centre box on the origin (if created from unit cell data)");
+
+@arguments = get_arguments2('>=1');
+
+# Read in component structures
+foreach $filename (@arguments) {
+	
+	undef $rval;
+	
+	$filebase = get_filebase($filename);
+	
+	$ens = &read_mol_any ($filename);
+	if (!defined $ens->[0]) {
+		mol_read_error($filename);
+		next;
+	}
+	
+	$mol = $ens->[0];
+	
+	if ($ignore || !defined $mol->{CELL}[0] || !defined $mol->{CELL}[1] || !defined $mol->{CELL}[2]) {
+		
+		silico_msg('c', "Could not obtain periodic cell information from $mol->{NAME} in file $filename.\n");
+		
+		@c = molecule_centre ($mol);
+		
+		silico_msg('c', "Creating box to enclose molecule @c\n");
+		
+		$rval = printbox(@c[0..5], "$filebase\_box.pdb");
+		
+	} else {
+	
+		silico_msg('c', "Creating box using unit cell.  Dimensions: $mol->{CELL}[0], $mol->{CELL}[1], $mol->{CELL}[2]\n");
+		if ($centre) {
+			$rval = printbox ($mol->{CELL}[0]/2, $mol->{CELL}[1]/2, $mol->{CELL}[2]/2,
+					$mol->{CELL}[0]/-2, $mol->{CELL}[1]/-2, $mol->{CELL}[2]/-2,
+					"$filebase\_box.pdb");
+		} else {
+			$rval = printbox ($mol->{CELL}[0], $mol->{CELL}[1], $mol->{CELL}[2], 0, 0, 0, "$filebase\_box.pdb");
+		}
+	}
+	
+	silico_msg('c', "Writing $filebase\_box.pdb\n", "\n");
+
+	silico_msg('d', "Could not open $filebase\_box.pdb") if !defined $rval;
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

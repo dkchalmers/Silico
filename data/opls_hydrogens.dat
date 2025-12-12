@@ -1,0 +1,393 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! opls_hydrogens.dat
+#? Data file containing mappings of OPLS-AA hydrogen atom types
+#  to their parent heavy atoms.
+#>
+
+# Explanations where types have been reassigned or are debatable:
+# H on type 223: type 2010 (was mistakenly 911; see OPLS-AA documentation)
+# H on type 224: type 2010 (was mistakenly 911; see OPLS-AA documentation)
+# H on type 224B: type 2010 (see OPLS-AA documentation)
+# H on type 229: type 2011 (was 282, but assigned to new sec-amide type)
+# H on type 242: type 2011 (was 282, but assigned to new sec-amide type)
+# H on type 243: type 1042 (was 282, but assigned to tert-amide type)
+# H on type 244: type 2011 (was 282, but assigned to new sec-amide type)
+# H on type 245: type 1042 (was 282, but assigned to tert-amide type)
+# H on type 246: type 2010 (was mistakenly 282; see OPLS-AA documentation)
+# H on type 256: type 2012 (was 282, but assigned to new imide type)
+# H on type 257: type 2012 (was 282, but assigned to new imide type)
+# H on type 258: type 2012 (was 282, but assigned to new imide type)
+# H on type 273: type 2013 (was mistakenly 282; assigned to new carboxylate type)
+# H on type 274: type 2013 (was mistakenly 282; assigned to new carboxylate type)
+# H on type 275: type 2013 (was mistakenly 282; assigned to new carboxylate type)
+# H on type 283: type 2010 (was mistakenly 282; see OPLS-AA documentation)
+# H on type 284: type 2010 (was mistakenly 282; see OPLS-AA documentation)
+# H on type 285: type 2010 (was mistakenly 282; see OPLS-AA documentation)
+# H on type 498: type 2014 (was mistakenly 282, but assigned to new sulfoxide type)
+# H on type 499: type 2014 (was mistakenly 282, but assigned to new sulfoxide type)
+# H on type 2181: type 2184 (was mistakenly 282, but assigned to new type for C between ether and carboxylate)
+# H on type 2182: type 2184 (was mistakenly 282, but assigned to new type for C between ether and carboxylate)
+#
+#	Parent	Hydrogen
+#
+# "Normal" types
+normal	63	65
+normal	78	79
+normal	82	86
+normal	83	87
+normal	97	98
+normal	111	112
+normal	113	114
+normal	116	117
+normal	127	128
+normal	133	134
+normal	135	140
+normal	136	140
+normal	137	140
+normal	138	140
+normal	142	144
+normal	143	144
+normal	145	146
+normal	145B	146
+normal	148	140
+normal	149	140
+normal	150	144
+normal	152	153
+normal	154	155
+normal	157	176
+normal	158	176
+normal	160	165
+normal	162	163
+normal	167	168
+normal	169	170
+normal	171	172
+normal	173	176
+normal	174	176
+normal	181	185
+normal	182	185
+normal	183	185
+normal	187	188
+normal	189	190
+normal	191	192
+normal	193	194
+normal	195	196
+normal	200	204
+normal	201	205
+normal	206	140
+normal	207	140
+normal	209	140
+normal	210	140
+normal	211	140
+normal	213	140
+normal	214	140
+normal	215	140
+normal	217	140
+normal	218	176
+normal	219	176
+normal	223	2010
+normal	224	2010
+normal	224B	2010
+normal	227	144
+normal	229	2011
+normal	232	279
+normal	237	240
+normal	238	241
+normal	242	2011
+normal	243	1042
+normal	244	2011
+normal	245	1042
+normal	246	2010
+normal	249	250
+normal	251	254
+normal	252	255
+normal	256	2012
+normal	257	2012
+normal	258	2012
+normal	265	241
+normal	267	279
+normal	268	270
+normal	273	2013
+normal	274	2013
+normal	275	2013
+normal	277	279
+normal	283	2010
+normal	284	2010
+normal	285	2010
+normal	286	289
+normal	287	290
+normal	291	911
+normal	292	911
+normal	293	911
+normal	295	911
+normal	296	911
+normal	297	911
+normal	298	911
+normal	299	911
+normal	300	301
+normal	303	304
+normal	305	911
+normal	306	140
+normal	307	911
+normal	308	140
+normal	309	310
+normal	313	314
+normal	315	316
+normal	317	318
+normal	319	325
+normal	321	327
+normal	323	329
+normal	324	330
+normal	331	332
+normal	333	339
+normal	337	344
+normal	338	345
+normal	415	416
+normal	418	419
+normal	421	422
+normal	425	426
+normal	427	428
+normal	429	430
+normal	431	432
+normal	434	435
+normal	443	444
+normal	448	449
+normal	453	454
+normal	455	456
+normal	458	459
+normal	461	462
+normal	465	279
+normal	468	469
+normal	476	477
+normal	478	479
+normal	480	481
+normal	482	483
+normal	484	485
+normal	486	487
+normal	490	469
+normal	491	469
+normal	498	2014
+normal	499	2014
+normal	503	504
+normal	505	2017
+normal	506	2018
+normal	507	2018
+normal	508	2018
+normal	509	2018
+normal	510	2018
+normal	512	513
+normal	514	2015
+normal	515	140
+normal	517	144
+normal	521	524
+normal	522	525
+normal	523	526
+normal	528	529
+normal	531	534
+normal	532	535
+normal	533	536
+normal	538	540
+normal	539	541
+normal	542	545
+normal	543	546
+normal	544	547
+normal	548	553
+normal	550	554
+normal	551	555
+normal	552	556
+normal	557	562
+normal	558	563
+normal	560	564
+normal	561	565
+normal	567	569
+normal	568	570
+normal	572	576
+normal	574	577
+normal	575	578
+normal	581	584
+normal	582	585
+normal	583	586
+normal	587	596
+normal	588	597
+normal	589	598
+normal	590	599
+normal	591	600
+normal	592	601
+normal	593	602
+normal	604	613
+normal	605	614
+normal	606	615
+normal	607	616
+normal	608	617
+normal	609	618
+normal	610	619
+normal	634	638
+normal	636	639
+normal	637	640
+normal	642	643
+normal	658	663
+normal	660	664
+normal	661	665
+normal	662	666
+normal	682	683
+normal	701	702
+normal	708	710
+normal	711	140
+normal	712	140
+normal	714	715
+normal	716	717
+normal	733	140
+normal	734	204
+normal	747	911
+normal	748	911
+normal	755	759
+normal	756	759
+normal	757	759
+normal	762	763
+normal	764	763
+normal	765	763
+normal	774	777
+normal	775	778
+normal	776	779
+normal	782	784
+normal	900	909
+normal	901	910
+normal	903	911
+normal	904	911
+normal	905	911
+normal	906	911
+normal	907	911
+normal	908	911
+normal	912	911
+normal	914	911
+normal	915	911
+normal	919	911
+normal	920	911
+normal	922	185
+normal	923	140
+normal	924	911
+normal	925	926
+normal	940	941
+normal	942	911
+normal	943	911
+normal	944	911
+normal	951	950
+normal	953	955
+normal	957	958
+normal	959	958
+normal	966	967
+normal	971	972
+normal	973	972
+normal	976	977
+normal	978	977
+normal	989	911
+normal	997	185
+normal	1011	1015
+normal	1012	1015
+normal	1021	481
+normal	1038	1042
+normal	1039	1042
+normal	1040	1042
+normal	1043	1045
+normal	2003	282
+normal	2005	2006
+normal	2008	2009
+normal	2016	2017
+normal	2019	2020
+normal	2181	2184
+normal	2182	2184
+normal	2185	176
+normal	2187	196
+normal	2188	194
+normal	2189	185
+normal	2190	185
+normal	2200	2201
+normal	2202	2203
+normal	2205	2206
+# Tinker types	
+tinker	1	6
+tinker	2	6
+tinker	3	6
+tinker	4	6
+tinker	8	10
+tinker	9	10
+tinker	11	12
+tinker	14	6
+tinker	15	6
+tinker	16	17
+tinker	19	6
+tinker	20	6
+tinker	22	27
+tinker	24	25
+tinker	29	30
+tinker	31	32
+tinker	34	38
+tinker	35	38
+tinker	36	38
+tinker	40	41
+tinker	42	43
+tinker	44	45
+tinker	46	47
+tinker	48	49
+tinker	52	56
+tinker	53	57
+tinker	58	6
+tinker	59	6
+tinker	60	6
+tinker	62	6
+tinker	63	6
+tinker	64	6
+tinker	66	6
+tinker	67	6
+tinker	68	6
+tinker	70	71
+tinker	73	6
+tinker	74	6
+tinker	76	77
+tinker	84	87
+tinker	85	88
+tinker	96	97
+tinker	98	102
+tinker	100	101
+tinker	108	110
+tinker	117	119
+tinker	126	130
+tinker	127	130
+tinker	128	130
+tinker	133	137
+tinker	134	137
+tinker	135	137
+tinker	140	144
+tinker	141	144
+tinker	142	144
+tinker	145	150
+tinker	146	151
+tinker	147	152
+tinker	148	153
+tinker	158	160
+tinker	159	161
+tinker	170	171
+tinker	179	180
+tinker	186	187
+tinker	188	189
+tinker	190	191
+tinker	192	193

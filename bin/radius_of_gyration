@@ -1,0 +1,264 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! radius_of_gyration
+#? Calculates the radius of gyration for a series of molecules
+#F
+#; -ts_<number> Timestep between files (ps)
+#; -i_<number> Time at initial file (ps)
+#; -a Use all fragments (not just the largest one) to calculate radius of gyration
+#; -g_<string> Use only atoms in index group "string"
+#; -n_<file> Index file in which to find the group
+#SF
+#. Created: BPR October 2005
+#. $Revision: 1.15-58-g17c5ec7 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+# Shut some whinges up
+undef @Silico::Atomic_Masses;
+$Silico::PROG = $Silico::PROG;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("radius_of_gyration", '$Revision: 1.15-58-g17c5ec7 $');
+
+$ENV{LANG} .= 'UTF8';
+
+require silico_gromacs;
+require silico_split;
+require silico_statistics;
+
+# Get flags
+my $timestep	= make_flag('ts', 'timestep', "Timestep between files (ps)", 1, undef, undef, "decimal > 0");
+my $init		= make_flag('i', 'initial-time', "Time at first file (ps)", 1, undef, undef, "decimal");
+my $all		= make_flag('a', 'all-fragments', "Include all fragments (not just the largest)");
+my $indexfile	= make_flag('n', 'index-file', "Index file", 1);
+my $group 		= make_flag('g', 'group', "Index group to use", 1);
+
+my @arguments = get_arguments2('>=1');
+
+my $outfile = get_sflag('O') || 'radius_of_gyration.dat';
+
+if ($group && !$all) {
+	silico_msg('w', "Calculation on an index group has been requested.\n",
+			"To avoid loss of atoms and automatic renumbering, which plays havoc with index\n",
+			"groups, the -a flag has been enabled.\n");
+	$all = 1;
+}
+
+if ($group && !$indexfile) {
+	silico_msg('d', "You've attempted to specify a group without an index file!\n",
+			"Please specify an index file using the -n flag, or do not use a group.\n");
+}
+
+# Read in the index
+my $index;
+if (defined $indexfile) {
+	$index = read_gromacs_indexfile($indexfile);
+	if (!defined $index) {
+		silico_msg('d', "Could not create an index from file $indexfile!\n");
+	}
+	
+	# Check that the group is actually present in the index
+	my $flag = 0;
+	foreach my $igroup (keys %$index) {
+		$flag = 1 if $igroup eq $group;
+	}
+	if (!$flag) {
+		silico_msg('d', "Group \"$group\" not found in index file $indexfile!\n");
+	}
+}
+
+# Assumptions made:
+#  - That each file should contain only one "molecule"
+#  - That the most significant molecule should appear first
+
+
+# Open the output file
+if (!get_flag('quiet', 'l')) {
+	$| = 1;
+	print "Creating output file $outfile...";
+}
+
+open (OUTFILE, ">$outfile") || file_write_error($outfile);
+
+print OUTFILE "# $outfile\n";
+print OUTFILE "# Program: $0\n";
+print OUTFILE "# Run by user $ENV{USER} on computer ".`hostname -s`;
+print OUTFILE "# ".`date`;
+print OUTFILE "# \n";
+print OUTFILE "# =========== Program Options ===========\n";
+print OUTFILE "# \n";
+
+if (defined $timestep) {
+	print OUTFILE "# Timestep: $timestep ps\n";
+} else {
+	print OUTFILE "# No defined timestep\n";
+}
+
+if (defined $init) {
+	print OUTFILE "# Initial time: $init ps\n";
+} else {
+	print OUTFILE "# No defined initial time\n";
+}
+
+print OUTFILE "#\n";
+print OUTFILE "# Instantaneous Radii of Gyration\n";
+print OUTFILE "# -------------------------------\n";
+print OUTFILE "#File\tTime\tRadius (A^2)\n";
+
+if (!get_flag('quiet', 'l')) {
+	print "done\n";
+	$| = 0;
+}
+
+my @radii2;
+
+my $molcount = 0;
+foreach my $arg (@arguments) {
+	
+	my $elapsed_time;
+	my $list;
+	@$list = ();
+	my  $newmol;
+	
+	++$molcount;
+
+	my $mols = read_mol_any($arg);
+	
+	if ($#{$mols} > 0) {
+		silico_msg('n', "More than one molecule found in file $arg.\n",
+				"Only the first molecule will be included in calculations.\n");
+	}
+	
+	# Skip all but the first molecule
+	my $mol = $mols->[0];
+	
+	if (!$all) {
+		# Create bonds
+		molecule_check_and_fix_connectivity($mol) if !(get_lflag('nobond'));
+		
+		# Split the molecule into its component actual molecules, keeping the largest one
+		my $newmol = molecule_split_keeping_largest_mol($mol);
+		$mol = $newmol;
+	}
+	
+	if ($group) {
+		foreach my $i (@{$index->{$group}}) {
+			if (defined $mol->{ATOMS}[$i-1]) {
+				push @$list, $mol->{ATOMS}[$i-1];
+			} else {
+				silico_msg('w', "Atom number $i is not present in this molecule!\n",
+						"This atom has been skipped. Attempting to continue anyway.\n");
+			}
+		}
+	} else {
+		@$list = @{$mol->{ATOMS}};
+	}
+	
+	my $mw = molecule_mw($mol, $list);
+	my @com = molecule_centre_of_mass($mol, $list);
+	
+	# Mean-square Radius of Gyration
+	# Formula as per the following reference:
+	# Maiti, Prabal K.; Cagin, Tahir; Wang, Guofeng; Goddard, William A.
+	# Macromolecules 2004, 37(16), 6236-6254. See esp. page 6239.
+	
+	my $sum;
+	foreach my $atom (@$list) {
+	
+		my $mass = $Silico::Atomic_Masses[$atom->{ELEMENT_NUM}];
+		my $distance = magnitude(vector($atom->{X}, $atom->{Y}, $atom->{Z}, $com[0], $com[1], $com[2]));
+		$sum += ($mass * $distance * $distance);		
+	}
+	
+	my $radius2 = $sum / $mw;
+	
+	push @radii2, $radius2;
+	
+	# Print the output
+	silico_msg('c', "Mean-squared radius of gyration of molecule $molcount: ",
+			sprintf("%8.2f", $radius2), " A^2\n");
+	
+	# Write the output to a file
+	print OUTFILE "$molcount\t";
+	
+	if ($timestep) {
+	$elapsed_time = $init + (($molcount - 1) * $timestep);
+		print OUTFILE "$elapsed_time\t";
+	} else {
+		print OUTFILE "0\t";
+	}
+	
+	printf OUTFILE "%.6f\n", $radius2;
+}
+
+print OUTFILE "#Mean\t\t".sprintf("%.6f", mean(@radii2))."\n";
+print OUTFILE "#S.D.\t\t".sprintf("%.6f", standard_deviation_bias_corrected(@radii2))."\n";
+close OUTFILE;
+		
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

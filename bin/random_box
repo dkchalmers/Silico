@@ -1,0 +1,394 @@
+#!/usr/bin/perl -w
+#!/usr/bin/perl -d:NYTProf -w
+
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! random_box
+#? Fill a cell with molecules in random orientation using periodic boundary conditions.
+#. Random box can be used to build systems containing a random assortment of molecules or to solvate
+#  a molecular system. An existing molecule file (solute) can also be embedded in the box.
+#  The program can also generate molecules oriented randomly within a sphere or spherical shell.
+#. Use:
+#
+#!3 Simple random box
+#. Generate a periodic cell size 10 x 10 x 10 Ang containing 100 molecules in random orientations:
+#. random_box -x 10 -y 10 -z 10 -n 100 mol.pdb 
+#
+#!3 Protein embedded in a box of solvent
+#. Generate a periodic cell size 100 x 100 x 100 Ang containing a protein solvated by 
+#  water molecules to give the whole system a density of 1kg/dm^3:
+#. random_box -x 100 -y 100 -z 100 -d 1 -e prot.pdb wat.pdb
+#
+#!3 Mixed random box
+#. Random_box can handle more than one input molecule.  The program will prompt for cell size and
+#  numbers of each molecule type
+#. random_box mol1.pdb mol2.pdb
+#. An alternate way to generate systems containing multiple random components is to run random
+#  box multiple times, embedding the previous system each time.
+#
+#!4 Geometric shapes
+#.  Random_box can insert molecules into a variety of geometric shapes; Spheres, spherical shells,
+#   cylinders and planes.  These shapes can be combined by specifying multiple shapes in a single
+#   run.  
+#
+#!4 Spheres and spherical shells
+#. Sphere of radius 20 Ang
+#. random_box mol1.pdb -sphere 20 
+#. Spherical shell of radius 20 Ang and thickness 10 Ang in the centre of a periodic cell
+#. random_box mol1.pdb -sphere 30 -thick 10
+#
+#!4 Cylinders and rods
+#. Rod of radius 20 Ang and spanning periodic cell:
+#. random_box mol1.pdb -cylinder 20 
+#. Cylinder of radius 20 and length 30 Ang
+#. random_box mol1.pdb -cylinder 20 -thick 30
+#
+#!4 Planes
+#. Plane of thickness 30 Ang in the xy plane
+#. random_box mol1.pdb -plane 30 -xy
+#
+#!3 Holes
+#. Regularly spaced holes can be inserted into geometric shapes.  The number of holes
+#  and hole radius need to be specified.
+#. Make a spherical shell with 5 evenly spaced holes with a hole radius of 5 Angstroms:
+#. random_box mol1.pdb -sphere 30 -thick 10 -holes 5 -hr 5
+#
+#!3 Multiple Shapes
+#. Multiple shapes can be inserted into a single periodic cell.  The arrangement 
+#  is specified with the -origin flag.  The -origin flag can be combined with other
+#  options to produce multiple more complex structures.
+#. Currently supported origins are: 
+#; a A single shape located in the centre of the cell
+#; b A single shape located in the centre of the XY plane and at 0 on Z axis
+#; c Four shapes in a hexagonal pattern in the Z plane
+#. Produce 4 spheres of radius 10 Angstroms with hexagonal packing on the Z plane
+#. random_box mol1.pdb -sphere 10 -origin c
+#
+#!3 The -invert flag and solvation of shapes
+#.  The -invert flag can be used to select the area not occupied by a shape.  This is useful for solvation:
+#.  random_box -e sphere_with_holes.pdb -sphere 30 -thick 10 -holes 5 -hr 5 -invert water.pdb
+#!3 What to do if the required number of molecules won't fit in your desired cell
+#.  If random_box can not fit the desired number of molecules in the cell (i.e. the packing process does not complete), try
+#   increasing the cell size, followed by running an NVT simulation. The system will then shrink to the correct volume.
+#F
+
+#.
+#; -e_<filename>        Embed molecule filename
+#; -n_<number>          Number of molecules to add
+#; -d_<number>          Calculate number and add molecules to give this density of entire molecular system (including solute). 
+#                       Note: Number of molecules added is rounded to 3 significant figures. e.g 12345 will be rounded to 12300.
+#; -t 			Translate embed molecule to centre [origin, cell, none] (default cell)
+#; -rand_<number>       Randomise input structures by randomly rotating <number> single bonds
+#.
+#. Packing flags
+#; -si_<factor>         Initial scale factor for atom-atom packing distance (default 0.8) 
+#; -sm_<factor>         Minimum scale factor for atom-atom packing distance (default 0.4)  
+#; -incr_<number>       Number of unsuccesful moleucle packing trials before reducing the scale factor.  Default 100
+#.
+#. Geometry Flags
+#; -x }
+#; -y } Dimensions of the box (Angstroms)
+#; -z }
+#; -xy                 	Build plane or cylinder in the xy plane
+#; -plane_<thick>  	Construct a plane of molecules in the centre of the cell of thicknes <thick>. By 
+#                       default the XZ plane is constructed unless the -xy flag is used. 
+#; -sphere_<rad>       	Build sphere with radius <rad>
+#: -cylinder_<rad>	Build a cylinder with radius <rad> along the X axis
+#; -thick_<width>       Thickness of spherical shell or length of cylinder (leave unset to generate solid sphere or rod 
+#                       spanning entire periodic cell)
+#; -length_<len>        Length of cylinder
+#; -holes_<number>	Number of holes to be evenly distributed on the sphere
+#; -hr_<rad> 		Radius of holes
+#; -origin_<type> 	Origin points for hole vectors:
+#; _ a Single origin in centre of cell (0.5 0.5 0.5)
+#; _ b Single origin at (0.5 0.5 0)
+#; _ c Four origins in xy plane aranged in hexagonal pattern
+#; -invert	        Invert the sense of all 3d structures (i.e. inverting a sphere will give a spherical hole)
+#. Output
+#; -write               Write intermediate structures
+#; -pc                  Make files PDB format compatible with maximum SUBID=9999
+#SF
+#. Created: DKC 2003 and later
+#. $Revision: 1.76.2.16.2.24 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_solvate;
+require silico_rbox;
+use vars qw($Pi);
+
+print_title("random_box", '$Revision: 1.76.2.16.2.24 $');
+
+my $embedname =  	 make_flag('e', 'embed-name', "Molecule to be embedded in box", 1);
+my $nummols =    	 make_flag('n', 'number-of-molecules', "Number of instances of molecule 1 to pack randomly", 1);
+my $density =    	 make_flag('d', 'density', "Required density for solvated system", 1, undef, undef, "Decimal > 0");
+my $trans =      	 make_flag('t', 'translate-embed', 'Translate embedded molecule to centre of cell');
+my $random =     	 make_flag('rand', 'randomise-dihedrals', "Number of bonds to randomise in packed molecule", 1, 0);
+
+# Packing flags
+		 	 make_flag('si', 'init-scale-factor', "Initial scale factor for atom-atom distance", 1, 1, undef, 'DECIMAL >0');
+			 make_flag('sm', 'min-scale-factor', "Minimum scale factor for atom-atom distance", 1, 0.4, undef, 'DECIMAL >0');
+                 	 make_flag('incr', 'max-try-increment', "Reduce allowed distance between atoms or increase maximum number of clashes after this number of unsuccesful trials", 1, 100);
+
+# Geometry flags
+my $cellx =      	 make_flag('x', undef, 'box x', 1, undef, undef, 'DECIMAL > 0');
+my $celly =      	 make_flag('y', undef, 'box y', 1, undef, undef, 'DECIMAL > 0');
+my $cellz =      	 make_flag('z', undef, 'box z', 1, undef, undef, 'DECIMAL > 0');
+
+use vars qw($xy $plane $sphere $cylinder $thick $length $holes $hole_rad $origin $invert $hole_vectors $hole_rad);
+$Silico::xy =		make_flag('xy', 'xy-plane', "Solvate blayer in the xy plane", 0);
+$Silico::plane = 	make_flag('plane', 'plane-size', "Place molecules in a plane of this thickness", 1, undef, undef, "Decimal >= 0");
+$Silico::sphere =    	make_flag('sphere', 'sphere', "Place molecules within a sphere of this radius", 1, undef, undef, 'DECIMAL >0');
+$Silico::cylinder = 	make_flag('cylinder', 'cylinder', "Make cylinder or rod of this radius along Z axis", 1, undef, undef, 'DECIMAL >0');
+$Silico::thick =	make_flag('thick', 'thick', "Thickness of sphercial or cylindrical shell", 1, $Silico::sphere || 0, undef, 'DECIMAL >0');
+$Silico::length =	make_flag('length', 'length', "Length of cylinder", 1, undef);
+$Silico::holes =     	make_flag('holes', 'holes', "Number of holes to make in surface or sphere", 1, undef, undef);
+$Silico::hole_rad =  	make_flag('hr', 'hole-radius', "Radius of holes distributed on sphere", 1, undef, undef);
+$Silico::origin =	make_flag('origin', 'holes-origins', "Origin points for hole vectors [o, a, b, c]", 1, 'a', undef);
+$Silico::invert =	make_flag('invert', 'invert', "Invert 3d structures");
+
+# Output flags
+			make_flag('write', 'undef', "Write out intermediate structures");
+			make_flag('pc', 'pdb-compatible', "Make files PDB format compatible");
+			
+my @arguments = get_arguments2('>=1');
+
+set_default_oappend('');
+print "\n";
+
+if ($Silico::holes) {
+	$hole_vectors = holes($Silico::holes);
+	silico_msg('dq', "Hole radius not set\n") if !defined $Silico::hole_rad;
+}
+if ($density && $nummols) {
+	silico_msg ('dq', "Include either density or number of molecule flags, not both.\n");
+}
+
+origins($Silico::origin);
+
+# Read in molecule to be embedded in box
+my $chain = 'A';
+my $segid = 'SA';
+my $embed;
+if ($embedname) {
+
+	print (heading("Molecule to be embeded\n"));
+	
+        # Read in molecule to be embedded 
+        my $e = read_mol_any ($embedname) || mol_read_error($embedname, 1);
+
+        $embed = $e->[0];
+        silico_msg('w', "Multipile molecules found in 'embed' file. Only the fist molecule will be used\n") if defined $e->[1];
+	
+	# Set flags so that vdw radii of embedded molecule are not scaled down.
+	dont_scale_vdw($embed);
+
+        # Check and fix the connectivity in this molecule
+        molecule_check_and_fix_connectivity($embed);
+
+        ($cellx, $celly, $cellz) = calc_box_size($embed, $cellx, $celly, $cellz, 0, 15);
+
+	my ($maxchain, $maxsegid) = find_maxchain_maxsegid($embed);
+	$chain = $maxchain;
+	pdb_increment_chain($chain); 
+	$segid = ++$maxsegid;
+	
+	print "Starting numbering from chain: $chain segid: $segid\n";
+} 
+
+my $default = 10; # Default extent of box around embedded molecule
+verify_input_data($cellx, "decimal > 0", "Box size (X)", $default);
+verify_input_data($celly, "decimal > 0", "Box size (Y)", $default);
+verify_input_data($cellz, "decimal > 0", "Box size (Z)", $default);
+
+molecule_trans_to_centre($embed) if $embed && $trans;
+
+if ($Silico::plane) {
+	if ((!$Silico::xy &&  $Silico::plane > $celly) || ($Silico::xy && $Silico::plane > $cellz)) {
+		silico_msg ('dq', "Half plane width '$Silico::plane' is greater than or equal to half the cell dimension.\n");
+	}
+}
+
+my $cell;
+@$cell = ($cellx, $celly, $cellz);
+
+silico_msg('c', "\n",
+	"Using box size: $cellx, $celly,$cellz A\n",
+	"Box volume: ".($cellx*$celly*$cellz)." Angstroms^3\n");
+
+if ($Silico::sphere) {
+
+	my $min = $cellx;
+	$min = $celly if $celly < $min;
+	$min = $cellz if $cellz < $min;
+	silico_msg('w', "Sphere radius is greater than half the smallest cell dimension ($min)\n") if $Silico::sphere > $min/2;
+	my $inner = $Silico::sphere-($Silico::thick||0);
+	$inner = 0 if $inner < 0;
+	my $v = sprintf "%d",($Silico::sphere**3-$inner**3)*4/3*$Pi;
+	silico_msg('c', "Sphere/shell volume: $v Angstroms^3\n");
+}
+
+silico_msg('c', "\nWriting file: box.pdb\n");
+	
+printbox(0, 0, 0, $cellx, $celly, $cellz, 'box.pdb');
+
+
+# Read in component structures
+my $comp;
+@$comp  = ();
+my $i = 0;
+foreach my $arg (@arguments) {
+
+	my $ens = read_mol_any($arg);
+	mol_read_error($arg, 1) if (!defined $ens->[0]);
+	foreach my $mol (@$ens) {
+		molecule_check_and_fix_connectivity($mol);
+	}
+	@$comp = (@$comp, @$ens);
+	++$i;
+}
+
+if ($density) {
+
+	silico_msg('dq', "Can not caculate density for more than one molecule\n") if $#{$comp} > 0;
+
+	silico_msg('c', "Calculating required density\n");
+	$nummols = calc_molecule_density($embed, $comp->[0], $cellx, $celly, $cellz, $density);
+	$nummols = sprintf("%d", sprintf ("%.3g", $nummols)) if length($nummols) > 3;  # Round to 3 significant figures if nummols > 1000;
+
+	silico_msg('dq', "Negative number of molecules required ($nummols)\n") if $nummols < 0;
+}
+
+my $num_components->[0] = $nummols;
+$num_components = check_number_components($comp, $num_components);
+
+my ($obase, $oformat);
+if ($embed) {
+	($obase, $oformat) = get_ofilename2($embed);
+} else {
+	($obase, $oformat) = get_ofilename2($comp->[0]);
+}
+# Generate multiple copies of molecule(s) and put them in to ensemble's mollist
+print (heading("Making copies of molecules\n"));
+
+print "\nMolecules will be added starting from chain: $chain segment: $segid\n";
+
+my $mollist = make_molecule_copies($comp, $num_components, $chain, $segid, $random, $oformat);
+
+my $molcount = $#{$mollist}+1;
+
+# Pack molecules
+silico_msg('c', heading("Packing $molcount molecules\n"));
+
+my $model;
+$model = pack_molecules($mollist, $embed, $cell);
+
+# Set cell
+$model->{CELL} = $cell;
+$model->{CELL_ALPHA} = $model->{CELL_BETA} = $model->{CELL_GAMMA}= 90;
+
+# Write the output files
+mol_move_into_cell($model, $cell);
+my $ens;
+$ens->[0] = $model;
+
+write_mol_any($ens, $obase."_rbox", $oformat);
+
+$i = 0;
+open (OUTFILE, ">$obase.txt");
+print OUTFILE "[ molecules ]\n";
+foreach my $mol (@$comp) {
+	print OUTFILE "$mol->{ATOMS}[0]{SUBNAME}\t$num_components->[$i]\n";
+	++$i;
+}
+close OUTFILE;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+#################
+#  Subroutines  #
+#################
+
+
+sub randomise_and_test_molecule_position {
+
+        my $mol = $_[0];
+        my $cell = $_[1];
+
+        my $count = 0;
+	
+        while(1) {
+	
+		++$count;
+
+          	molecule_random_move_cartesian($mol, undef, undef, $cell);
+		
+		last if test_all_shapes($mol, $cell);
+		
+                if ($count % 10000 == 0) {
+                        silico_msg ('w', "Could not generate molecule satisfying geometric constraints in $count steps\n");
+                }
+        }
+	
+        return $count;
+}
+
+
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}  

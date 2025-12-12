@@ -1,0 +1,122 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_flatten
+#? Squash molecules flat into the XY plane
+#. $Revision: 1.18.2.1.2.1 $
+#SF
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my $atom;
+my @arguments;
+my $starttime = (times)[0];
+
+use vars qw($debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("flatten", '$Revision: 1.18.2.1.2.1 $');
+
+@arguments = get_arguments2('>=1');
+
+set_default_oappend('flat');
+
+foreach $arg (@arguments) {
+	
+	my $i;
+	my $fh_in;
+	my $fh_out;
+
+	silico_msg('c', "File: $arg\n");
+	
+	while(1) {
+
+		++$i;
+		
+		my $mol = read_mol_single($fh_in, $arg);
+
+		last if !defined $mol;
+		
+		foreach $atom (atoms($mol)) {
+	
+			my $x;
+			my $y;
+			
+			$x = $atom->{Y} - $atom->{X};
+			$y = ($atom->{X} - $atom->{Y} - 2* $atom->{Z})/2;
+
+			$atom->{X} = $x;
+			$atom->{Y} = $y;
+			$atom->{Z} = 0;
+		}
+		
+		$mol->{HAS_BAD_GEOM} = 1;
+
+		write_mol_single($fh_out, $mol, undef, undef, undef, '2D');
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

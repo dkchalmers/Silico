@@ -1,0 +1,188 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! mol_mw
+#? Calculate molecular weight and molecule extents
+#. MW data is calculated for the parent molecule (molecule with most atoms in file)
+#. Values are printed to standard output and added to output
+#  file as SDF_DATA
+#. $Revision: 1.26.2.2.2.3 $
+#F
+#; -addh Add hydrogens
+#; -v Fill valence
+#; -print Print data to a file 'mw.txt'
+#; -min Minimum molecular weight to output (ie skip molecules below this mass)
+#; -max Maximum molecular weight to output (ie skip molecules above this mass)
+
+#SF
+#>
+
+use strict;
+
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_mw", '$Revision: 1.26.2.2.2.3 $');
+require silico_split;
+
+use vars qw($Avogadro $Pi);
+
+my $starttime = (times)[0];
+
+my $addh        = make_flag('addh',  'add-hydrogens', "Add hydrogens to molecule");
+my $fillvalence = make_flag('v',     'fill-valences', "Fill valences");
+my $print       = make_flag('print', 'print',         "Print data to text file mw.txt");
+my $min         = make_flag('in',    'min-mw',        "Skip molecules with a MW greater than this value", 1);
+my $max         = make_flag('max',   'max-mw',        "Skip molecules with a MW greater than this value", 1);
+
+my @arguments = get_arguments2('>=1');
+set_default_oappend('mw');
+
+if ($print) {
+	open(OUTFILE, ">mw.txt") || die "Could not open output file mw.txt\n";
+	print OUTFILE "#count\tfilename\tname\tnumatoms\tmw\tbox_vol\tedge\tradius\tformula\tparent_mw\tparent_formula\n";
+}
+
+set_default_oappend('mw');
+
+foreach my $arg (@arguments) {
+
+	my $mols = read_mol_any($arg, undef, undef, "NOBOND");
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	my $i = 0;
+	foreach my $mol (@$mols) {
+
+		++$i;
+
+		if ($addh) {
+			mol_rescale_bonds($mol, undef, 1.5);
+			mol_add_hydrogens($mol, $fillvalence, 0);
+		}
+
+		my $mw = sprintf "%8.2f", molecule_mw($mol);
+
+		my $formula = molecule_formula($mol, 1);
+
+		if (defined $max && ($mw > $max)) {
+			silico_msg('c', "Molecular weight $mw is greater than $max. Skipping\n");
+			next;
+		}
+		if (defined $min && ($mw < $min)) {
+			silico_msg('c', "Molecular weight $mw is less than $min. Skipping\n");
+			next;
+		}
+
+		# Calculate required volume (in A^3) for a density of 1
+		# Calculate edge length of the required cube
+		# Calculate radius of required sphere
+		my $vol  = $mw / $Avogadro * 1e24;          # In Ang^3
+		my $rad  = ($vol * 3 / 4 / $Pi)**(1 / 3);
+		my $edge = $vol**(1 / 3);
+
+		$vol  = sprintf "%8.2f", $vol;
+		$rad  = sprintf "%8.2f", $rad;
+		$edge = sprintf "%8.2f", $edge;
+
+		my $name = $mol->{NAME};
+		$name =~ s/\s*$//;
+		my $formula_string = molecule_formula_string($mol);
+
+		$mol->{SDF_DATA}{'SILICO.MW'}      = $mw;
+		$mol->{SDF_DATA}{'SILICO.FORMULA'} = $formula_string;
+
+		silico_msg(
+			'c',
+			"\nFile name:\t\t\t\t$arg\n",
+			"Molecule name:\t\t\t\t$name\n",
+			"Number of atoms:\t\t\t$mol->{NUMATOMS}\n",
+			"Molecular weight:\t\t\t$mw\n",
+			"Estimated volume:\t\t\t$vol\n",
+			"Cube edge length:\t\t\t$edge\n",
+			"Estimated radius:\t\t\t$rad\n",
+			"Molecular formula (in file):\t\t$formula_string\n"
+		);
+
+		my $parent = deep_copy($mol);
+		$parent = molecule_split_keeping_largest_mol($parent);
+		my $parent_mw      = molecule_mw($parent, undef, 1);
+		my $parent_formula_string = molecule_formula_string($parent, 1);
+
+		$mol->{SDF_DATA}{'SILICO.PARENT.MW'}      = $parent_mw;
+		$mol->{SDF_DATA}{'SILICO.PARENT.FORMULA'} = $parent_formula_string;
+
+		silico_msg('c', "Molecular weight of largest molecule:\t$parent_mw\n", "Molecular formula of largest component:\t$parent_formula_string\n");
+
+		if ($mol->{WARN}{CALC_MISSING_H}) {
+			silico_msg('w', "Guessed missing hydrogens for $mol->{WARN}{CALC_MISSING_H} atoms in molecule \"$mol->{NAME}\"!\n");
+		} elsif (!$formula->{H}) {
+			silico_msg('w', "No hydrogens are present in the formula of molecule \"$mol->{NAME}\"!\n");
+		}
+		silico_msg('c', "\n");
+
+		print OUTFILE "$i\t$arg\t$name\t$mol->{NUMATOMS}\t$mw\t$vol\t$edge\t$rad\t$formula_string\t$parent_mw\t$parent_formula_string\n" if $print;
+	}
+
+	write_mol_any($mols);
+}
+
+close OUTFILE if $print;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+	#<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+	#; Sets: $Silico::home_dir, $Silico::lib_dir
+	#; Requires: nothing
+	#; Returns: nothing
+	#>
+
+	die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+	$Silico::home_dir = $ENV{SILICO_HOME} . "/";
+	$Silico::lib_dir  = $Silico::home_dir . "lib/";
+	push @INC, substr($Silico::lib_dir, 0, -1);
+
+	require silico;
+}

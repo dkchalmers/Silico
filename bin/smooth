@@ -1,0 +1,181 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! Smooth
+#? Smooth a trajectory by averaging frames without generating 'jumping molecule' artefacts
+#  caused by molecules crossing the periodic cell boundary
+#F
+#; -w Smoothing window (number of frames, default 2)
+#; -d Do not average residues that move more than this distance (default 15 Ang)
+#SF
+#. Created: DKC November 2009
+#. $Revision: 1.8.2.2.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+use vars qw($silico_readerror);
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("Smooth", '$Revision: 1.8.2.2.2.2 $');
+
+use vars qw ($silico_readsingle);
+
+my $window   = 	make_flag('w', "smoothing-window", "Number of frames to average", 1, 2);
+my $skipdist = 	make_flag('d', "distance", "Do not average residues that move more than this distance", 1, 15);
+my @arguments = 	get_arguments2('>=1');
+
+my $startmol;
+my @prevmols = ();
+my $filebase;
+my $i = 0;
+my $skipdist2 = $skipdist**2;
+
+ARG: foreach my $arg (@arguments) {
+	
+	silico_msg('c', "File: $arg\n");
+	
+	my $fr_in;
+	my $fr_out;
+	while (1) {
+		
+		++$i;
+
+		# Read a single molecule (if supported by read routine)
+		my $mol = read_mol_single($fr_in, $arg);
+		
+		if ($silico_readerror) {
+              		silico_msg('e', "Error reading file $arg!.  Skipping.\n");
+               		next ARG;
+        	}
+		
+		last if !defined $mol; 
+				
+		if ($i == 1) {
+			$filebase = get_filebase($arg);
+			$filebase =~ s/_[0-9]*$//;
+			$filebase ||= "file";
+			print "Using filebase: $filebase\n";
+			$startmol = $mol;	
+		}
+		
+		silico_msg('d', "Molecule '$mol->{NAME}' ($mol->{NUMATOMS})has a different number of atoms from '$startmol->{NAME}' ($startmol->{NUMATOMS})\n") 
+			if $i > 1 && ($mol->{NUMATOMS} != $startmol->{NUMATOMS});
+		
+		my $newmol = deep_copy($mol);
+
+		my $skipcount;
+		my $j = 0;
+
+		foreach my $atom (atoms($mol)) {
+
+			my $natom = $newmol->{ATOMS}[$j];
+
+			foreach my $pmol (@prevmols) {
+	
+				my $patom = $pmol->{ATOMS}[$j];
+				my $d2 = distance_sq($atom, $patom); 
+		
+				# Skip if we have moved more than skipdist Angstroms
+				if ($d2 > $skipdist2) {
+
+					my $d = sqrt($d2);
+					++$skipcount;
+					silico_msg('g', "Skip $atom->{SUBNAME} distance: $d atomnum: $j names: $atom->{NAME} $patom->{NAME}\n");
+					next;
+				} 
+	
+				$natom->{X} += $patom->{X};
+				$natom->{Y} += $patom->{Y};
+				$natom->{Z} += $patom->{Z};
+				++$natom->{AV_COUNT};
+			}
+
+			++$j;
+		}
+
+		print "$i\tSkipped $skipcount atoms that moved by more than $skipdist Ang\n" if $skipcount;
+
+		foreach my $natom (atoms($newmol)) {
+	
+			$natom->{X} /= ($natom->{AV_COUNT}||0)+1;
+			$natom->{Y} /= ($natom->{AV_COUNT}||0)+1;
+			$natom->{Z} /= ($natom->{AV_COUNT}||0)+1;
+		}
+		
+		write_mol_single($fr_out, $newmol, "$filebase\_smth", undef, undef, "NOSORT MODEL");
+		
+		# Save previous frames
+		push @prevmols, $mol;
+		shift @prevmols if ($#prevmols+1 >= $window);
+		
+		silico_msg('g', "Stored frames for averaging ".($#prevmols+1)."\n");
+	}
+	
+}
+
+
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

@@ -1,0 +1,122 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_mol
+#? Read a molecule and write (by default) in the same format.
+#F
+#; -check Check integrity of molecules
+#; -merge Merge all molecules into a single molecule
+#SF
+#. Created: DKC 2001
+#. $Revision: 1.30.2.1.2.4 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+print_title("write_mol", '$Revision: 1.30.2.1.2.4 $');
+
+my $check = make_flag('check', 'check-molecules', "Check integrity of molecules");
+my $merge = make_flag('merge', 'merge', "Merge all molecules into a single file");
+
+my @arguments = get_arguments2('>=1');
+
+$Silico::debug = $Silico::debug; # Don't warn me
+
+my $allmols;
+
+foreach my $arg (@arguments) {
+
+	silico_msg('c', "File: $arg\n");
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	foreach my $mol (@$mols) {
+	
+		molecule_check_and_fix_connectivity($mol);
+		mol_check($mol) if $check;
+	}
+	
+	ensemble_printout($mols, 'all') if $Silico::debug;
+	
+	if ($merge) {
+		
+		foreach my $mol (@$mols) {
+		
+			push @$allmols, $mol;
+		}
+		
+	} else {
+		write_mol_any($mols);
+	}
+}
+
+write_mol_any($allmols) if $merge;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+BEGIN {
+
+	#<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

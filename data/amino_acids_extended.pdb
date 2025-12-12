@@ -1,0 +1,345 @@
+HEADER    Alanine
+COMPND    Alanine
+ATOM      1  N   ALA A  33       1.417  -0.562   0.697  1.00 10.09           N  
+ATOM      2  CA  ALA A  33       0.473   0.277  -0.021  1.00 13.14           C  
+ATOM      3  C   ALA A  33      -0.694   0.562   0.915  1.00 18.11           C  
+ATOM      4  O   ALA A  33      -1.417  -0.362   1.304  1.00 19.94           O  
+ATOM      5  CB  ALA A  33       0.023  -0.401  -1.304  1.00 17.46           C  
+END
+HEADER    Arginine
+COMPND    Arginine
+ATOM      1  N   ARG A 166      -2.736  -2.252  -1.131  1.00 36.45           N  
+ATOM      2  CA  ARG A 166      -1.777  -1.219  -0.753  1.00 36.93           C  
+ATOM      3  C   ARG A 166      -2.361   0.161  -0.448  1.00 37.64           C  
+ATOM      4  O   ARG A 166      -1.825   0.897   0.383  1.00 37.70           O  
+ATOM      5  CB  ARG A 166      -0.678  -1.070  -1.802  1.00 36.62           C  
+ATOM      6  CG  ARG A 166       0.367  -0.066  -1.389  1.00 35.53           C  
+ATOM      7  CD  ARG A 166       1.111  -0.531  -0.135  1.00 33.75           C  
+ATOM      8  NE  ARG A 166       2.073   0.463   0.342  1.00 31.19           N  
+ATOM      9  CZ  ARG A 166       1.802   1.389   1.254  1.00 30.59           C  
+ATOM     10  NH1 ARG A 166       0.598   1.453   1.802  1.00 30.88           N  
+ATOM     11  NH2 ARG A 166       2.736   2.252   1.624  1.00 29.11           N  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7
+CONECT    7    6    8
+CONECT    8    7    9
+CONECT    9    8   10   11
+CONECT   10    9
+CONECT   11    9
+END
+HEADER    Asparigine
+COMPND    Asparigine
+ATOM      1  N   ASP A 167       1.380  -1.218   0.414  1.00 38.32           N  
+ATOM      2  CA  ASP A 167       0.834   0.114   0.624  1.00 39.23           C  
+ATOM      3  C   ASP A 167      -0.122   0.148   1.812  1.00 39.21           C  
+ATOM      4  O   ASP A 167      -0.534   1.218   2.264  1.00 39.51           O  
+ATOM      5  CB  ASP A 167       0.130   0.602  -0.632  1.00 39.73           C  
+ATOM      6  CG  ASP A 167      -0.942  -0.349  -1.089  1.00 41.39           C  
+ATOM      7  OD1 ASP A 167      -1.380  -1.189  -0.274  1.00 43.41           O  
+ATOM      8  ND2 ASP A 167      -1.345  -0.253  -2.264  1.00 43.85           N  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6    7
+CONECT    6    5    7    8
+CONECT    7    6    5
+CONECT    8    6
+END
+HEADER    Aspartic_acid
+COMPND    Aspartic_acid
+ATOM      1  N   ASP A 167       1.380  -1.218   0.414  1.00 38.32           N  
+ATOM      2  CA  ASP A 167       0.834   0.114   0.624  1.00 39.23           C  
+ATOM      3  C   ASP A 167      -0.122   0.148   1.812  1.00 39.21           C  
+ATOM      4  O   ASP A 167      -0.534   1.218   2.264  1.00 39.51           O  
+ATOM      5  CB  ASP A 167       0.130   0.602  -0.632  1.00 39.73           C  
+ATOM      6  CG  ASP A 167      -0.942  -0.349  -1.089  1.00 41.39           C  
+ATOM      7  OD1 ASP A 167      -1.380  -1.189  -0.274  1.00 43.41           O  
+ATOM      8  OD2 ASP A 167      -1.345  -0.253  -2.264  1.00 43.85           O  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6    7
+CONECT    6    5    7    8
+CONECT    7    6    5
+CONECT    8    6
+END
+HEADER    Cysteine
+COMPND    Cysteine
+ATOM      1  N   CYS A  56       1.276   1.444  -1.113  1.00 45.64           N  
+ATOM      2  CA  CYS A  56      -0.059   1.232  -0.537  1.00 44.68           C  
+ATOM      3  C   CYS A  56      -0.168   0.800   0.942  1.00 43.07           C  
+ATOM      4  O   CYS A  56      -1.276   0.665   1.463  1.00 42.96           O  
+ATOM      5  CB  CYS A  56      -0.878   0.291  -1.430  1.00 44.87           C  
+ATOM      6  SG  CYS A  56      -0.325  -1.444  -1.463  1.00 48.69           S  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5
+END
+HEADER    Glycine
+COMPND    Glycine
+ATOM      1  N   GLY A  59      -1.337  -1.222  -0.274  1.00 28.44           N  
+ATOM      2  CA  GLY A  59      -0.499  -0.256   0.444  1.00 25.40           C  
+ATOM      3  C   GLY A  59       0.477   0.499  -0.444  1.00 23.39           C  
+ATOM      4  O   GLY A  59       1.337   1.222   0.051  1.00 21.72           O  
+CONECT    1    2
+CONECT    2    1    3
+CONECT    3    2    4
+CONECT    4    3
+END
+HEADER    Glutamine
+COMPND    Glutamine
+ATOM      1  N   GLN A  62      -1.348  -0.948   2.652  1.00 18.93           N  
+ATOM      2  CA  GLN A  62      -0.355  -0.297   1.832  1.00 19.34           C  
+ATOM      3  C   GLN A  62      -0.389   1.206   2.018  1.00 18.94           C  
+ATOM      4  O   GLN A  62      -1.462   1.819   2.006  1.00 18.54           O  
+ATOM      5  CB  GLN A  62      -0.550  -0.622   0.362  1.00 20.28           C  
+ATOM      6  CG  GLN A  62       0.442   0.142  -0.478  1.00 22.17           C  
+ATOM      7  CD  GLN A  62       0.867  -0.605  -1.710  1.00 25.44           C  
+ATOM      8  OE1 GLN A  62       0.673  -1.819  -1.821  1.00 28.31           O  
+ATOM      9  NE2 GLN A  62       1.462   0.114  -2.652  1.00 26.19           N  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7
+CONECT    7    6    8    9
+CONECT    8    7
+CONECT    9    7
+END
+HEADER    Glutamic_acid
+COMPND    Glutamic_acid
+ATOM      1  N   GLU A  69       1.867  -1.356  -1.046  1.00 27.84           N  
+ATOM      2  CA  GLU A  69       1.843   0.071  -0.710  1.00 28.03           C  
+ATOM      3  C   GLU A  69       3.075   0.477   0.087  1.00 27.83           C  
+ATOM      4  O   GLU A  69       3.021   1.356   0.946  1.00 28.15           O  
+ATOM      5  CB  GLU A  69       0.561   0.437   0.052  1.00 28.21           C  
+ATOM      6  CG  GLU A  69      -0.722   0.175  -0.729  1.00 29.00           C  
+ATOM      7  CD  GLU A  69      -1.993   0.542   0.046  1.00 30.22           C  
+ATOM      8  OE1 GLU A  69      -1.917   1.289   1.046  1.00 31.21           O  
+ATOM      9  OE2 GLU A  69      -3.075   0.084  -0.354  1.00 30.64           O  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7
+CONECT    7    6    8    9
+CONECT    8    7
+CONECT    9    7
+END
+HEADER    Isoleucine
+COMPND    Isoleucine
+ATOM      1  N   ILE A  73       1.811   1.204   0.566  1.00 20.53           N  
+ATOM      2  CA  ILE A  73       0.727   0.412   1.140  1.00 19.98           C  
+ATOM      3  C   ILE A  73       1.226  -0.981   1.485  1.00 19.32           C  
+ATOM      4  O   ILE A  73       1.692  -1.694   0.608  1.00 19.14           O  
+ATOM      5  CB  ILE A  73      -0.456   0.294   0.165  1.00 20.15           C  
+ATOM      6  CG1 ILE A  73      -0.938   1.690  -0.246  1.00 20.04           C  
+ATOM      7  CG2 ILE A  73      -1.606  -0.499   0.812  1.00 19.83           C  
+ATOM      8  CD1 ILE A  73      -1.811   1.694  -1.485  1.00 20.89           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6    7
+CONECT    6    5    8
+CONECT    7    5
+CONECT    8    6
+END
+HEADER    Leucine
+COMPND    Leucine
+ATOM      1  N   LEU A 101      -0.978   1.829  -0.060  1.00 14.40           N  
+ATOM      2  CA  LEU A 101      -1.015   0.393   0.217  1.00 14.93           C  
+ATOM      3  C   LEU A 101      -1.525   0.108   1.619  1.00 14.78           C  
+ATOM      4  O   LEU A 101      -2.280  -0.832   1.833  1.00 14.53           O  
+ATOM      5  CB  LEU A 101       0.379  -0.230   0.050  1.00 14.71           C  
+ATOM      6  CG  LEU A 101       0.759  -0.534  -1.393  1.00 17.33           C  
+ATOM      7  CD1 LEU A 101       2.280  -0.649  -1.496  1.00 17.87           C  
+ATOM      8  CD2 LEU A 101       0.060  -1.829  -1.833  1.00 18.56           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7    8
+CONECT    7    6
+CONECT    8    6
+END
+HEADER    Methionine
+COMPND    Methionine
+ATOM      1  N   MET A 154       1.435  -0.028  -1.508  1.00 52.58           N  
+ATOM      2  CA  MET A 154       0.565   0.803  -0.686  1.00 52.28           C  
+ATOM      3  C   MET A 154       0.915   2.267  -0.864  1.00 51.78           C  
+ATOM      4  O   MET A 154       0.033   3.116  -0.960  1.00 51.69           O  
+ATOM      5  CB  MET A 154       0.689   0.415   0.785  1.00 52.60           C  
+ATOM      6  CG  MET A 154       0.340  -1.034   1.072  1.00 53.80           C  
+ATOM      7  SD  MET A 154      -1.435  -1.362   1.133  1.00 56.27           S  
+ATOM      8  CE  MET A 154      -1.422  -3.116   1.508  1.00 55.07           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7
+CONECT    7    6    8
+CONECT    8    7
+END
+HEADER    Phenylalanine
+COMPND    Phenylalanine
+ATOM      1  N   PHE A 181       3.137   0.577  -1.030  1.00 16.58           N  
+ATOM      2  CA  PHE A 181       1.755   0.227  -0.655  1.00 17.13           C  
+ATOM      3  C   PHE A 181       1.023  -0.407  -1.853  1.00 17.07           C  
+ATOM      4  O   PHE A 181       0.469  -1.508  -1.762  1.00 16.85           O  
+ATOM      5  CB  PHE A 181       1.050   1.508  -0.150  1.00 16.51           C  
+ATOM      6  CG  PHE A 181      -0.417   1.343   0.202  1.00 17.80           C  
+ATOM      7  CD1 PHE A 181      -1.387   1.234  -0.797  1.00 19.03           C  
+ATOM      8  CD2 PHE A 181      -0.834   1.379   1.523  1.00 19.14           C  
+ATOM      9  CE1 PHE A 181      -2.737   1.118  -0.480  1.00 19.02           C  
+ATOM     10  CE2 PHE A 181      -2.185   1.266   1.853  1.00 19.32           C  
+ATOM     11  CZ  PHE A 181      -3.137   1.141   0.844  1.00 20.13           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7    8
+CONECT    7    6    9
+CONECT    8    6   10
+CONECT    9    7   11
+CONECT   10    8   11
+CONECT   11    9   10
+END
+HEADER    Proline
+COMPND    Proline
+ATOM      1  N   PRO A  58       0.839  -1.026  -0.984  1.00 34.91           N  
+ATOM      2  CA  PRO A  58       0.080   0.120  -0.450  1.00 32.98           C  
+ATOM      3  C   PRO A  58       0.879   1.194   0.301  1.00 30.86           C  
+ATOM      4  O   PRO A  58       0.338   2.269   0.579  1.00 30.47           O  
+ATOM      5  CB  PRO A  58      -0.879  -0.540   0.542  1.00 33.07           C  
+ATOM      6  CG  PRO A  58      -0.151  -1.756   0.984  1.00 34.12           C  
+ATOM      7  CD  PRO A  58       0.491  -2.269  -0.271  1.00 34.87           C  
+CONECT    1    2    7
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7
+CONECT    7    6    1
+END
+HEADER    Serine
+COMPND    Serine
+ATOM      1  N   SER A  81       1.204  -1.029   0.010  1.00 23.30           N  
+ATOM      2  CA  SER A  81      -0.121  -0.434  -0.152  1.00 22.89           C  
+ATOM      3  C   SER A  81      -0.167   0.724  -1.138  1.00 22.43           C  
+ATOM      4  O   SER A  81      -1.204   0.983  -1.749  1.00 22.84           O  
+ATOM      5  CB  SER A  81      -0.649   0.043   1.205  1.00 23.25           C  
+ATOM      6  OG  SER A  81       0.217   1.029   1.749  1.00 23.29           O  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5
+END
+HEADER    Threonine
+COMPND    Threonine
+ATOM      1  N   THR A  93      -0.620  -0.060  -1.388  1.00 27.64           N  
+ATOM      2  CA  THR A  93       0.477  -0.416  -0.486  1.00 26.84           C  
+ATOM      3  C   THR A  93       0.163  -1.637   0.362  1.00 26.34           C  
+ATOM      4  O   THR A  93      -0.998  -2.024   0.513  1.00 25.66           O  
+ATOM      5  CB  THR A  93       0.733   0.683   0.535  1.00 27.20           C  
+ATOM      6  OG1 THR A  93      -0.412   0.793   1.388  1.00 27.13           O  
+ATOM      7  CG2 THR A  93       0.998   2.024  -0.146  1.00 27.70           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6    7
+CONECT    6    5
+CONECT    7    5
+END
+HEADER    Tryptophan
+COMPND    Tryptophan
+ATOM      1  N   TRP A 108       1.615   0.277   1.796  1.00 20.50           N  
+ATOM      2  CA  TRP A 108       1.445  -1.019   1.113  1.00 21.50           C  
+ATOM      3  C   TRP A 108       2.562  -1.975   1.522  1.00 21.81           C  
+ATOM      4  O   TRP A 108       3.609  -1.532   1.962  1.00 22.08           O  
+ATOM      5  CB  TRP A 108       1.501  -0.839  -0.412  1.00 21.02           C  
+ATOM      6  CG  TRP A 108       0.487   0.111  -0.939  1.00 21.48           C  
+ATOM      7  CD1 TRP A 108       0.690   1.409  -1.303  1.00 20.91           C  
+ATOM      8  CD2 TRP A 108      -0.904  -0.151  -1.147  1.00 22.00           C  
+ATOM      9  NE1 TRP A 108      -0.487   1.975  -1.722  1.00 20.95           N  
+ATOM     10  CE2 TRP A 108      -1.482   1.037  -1.642  1.00 22.01           C  
+ATOM     11  CE3 TRP A 108      -1.716  -1.275  -0.969  1.00 22.29           C  
+ATOM     12  CZ2 TRP A 108      -2.834   1.134  -1.962  1.00 21.58           C  
+ATOM     13  CZ3 TRP A 108      -3.066  -1.172  -1.286  1.00 22.77           C  
+ATOM     14  CH2 TRP A 108      -3.609   0.025  -1.775  1.00 21.75           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7    8
+CONECT    7    6    9
+CONECT    8    6   10   11
+CONECT    9    7   10
+CONECT   10    8    9   12
+CONECT   11    8   13
+CONECT   12   10   14
+CONECT   13   11   14
+CONECT   14   13   12
+END
+HEADER    Tyrosine
+COMPND    Tyrosine
+ATOM      1  N   TYR A 143      -0.780  -3.655   1.402  1.00 46.38           N  
+ATOM      2  CA  TYR A 143      -0.899  -2.378   0.709  1.00 46.88           C  
+ATOM      3  C   TYR A 143      -0.933  -2.576  -0.800  1.00 47.30           C  
+ATOM      4  O   TYR A 143       0.067  -2.966  -1.402  1.00 47.28           O  
+ATOM      5  CB  TYR A 143       0.250  -1.446   1.065  1.00 46.70           C  
+ATOM      6  CG  TYR A 143       0.123  -0.088   0.415  1.00 46.52           C  
+ATOM      7  CD1 TYR A 143      -0.877   0.798   0.806  1.00 46.48           C  
+ATOM      8  CD2 TYR A 143       1.001   0.311  -0.589  1.00 46.43           C  
+ATOM      9  CE1 TYR A 143      -1.001   2.044   0.217  1.00 46.64           C  
+ATOM     10  CE2 TYR A 143       0.885   1.561  -1.186  1.00 46.46           C  
+ATOM     11  CZ  TYR A 143      -0.117   2.419  -0.779  1.00 47.07           C  
+ATOM     12  OH  TYR A 143      -0.238   3.655  -1.367  1.00 47.35           O  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6
+CONECT    6    5    7    8
+CONECT    7    6    9
+CONECT    8    6   10
+CONECT    9    7   11
+CONECT   10    8   11
+CONECT   11    9   10   12
+CONECT   12   11
+END
+HEADER    Valine
+COMPND    Valine
+ATOM      1  N   VAL A 165       0.354  -0.633  -1.459  1.00 36.47           N  
+ATOM      2  CA  VAL A 165      -0.173   0.106  -0.310  1.00 36.28           C  
+ATOM      3  C   VAL A 165       0.648   1.344   0.032  1.00 36.40           C  
+ATOM      4  O   VAL A 165       0.400   2.002   1.039  1.00 36.23           O  
+ATOM      5  CB  VAL A 165      -0.269  -0.782   0.960  1.00 36.55           C  
+ATOM      6  CG1 VAL A 165      -1.128  -2.002   0.696  1.00 36.46           C  
+ATOM      7  CG2 VAL A 165       1.128  -1.200   1.459  1.00 35.99           C  
+CONECT    1    2
+CONECT    2    1    3    5
+CONECT    3    2    4
+CONECT    4    3
+CONECT    5    2    6    7
+CONECT    6    5
+CONECT    7    5
+END

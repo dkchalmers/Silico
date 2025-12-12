@@ -1,0 +1,264 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_tinker
+#? Read any Silico format and write a tinker xyz file.
+#. Usage: write_tinker <file1> <file2> ...
+#F
+#; -f Force field file (currently supports opls)
+#; -n Use normal force field atom types (not special Tinker types)
+#; -p Location of master parameter database
+#; -r Rename atoms so atom name = atom type
+#; -w Write info on unassigned atoms to standard output
+#; -v Verbose output, equivalent to -r -w
+#SF
+#. Created: DKC 2000
+#. $Revision: 1.1.2.2.2.2 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my @acceptable_ff;
+my $arg;
+my @arguments;
+my $ff;
+my $norm;
+my $options;
+my $parameters;
+my $parmfile;
+my $rename;
+my $starttime = (times)[0];
+my $verbose;
+my $write;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("write_tinker", '$Revision: 1.1.2.2.2.2 $');
+
+require silico_tinker;
+require silico_opls;
+
+$options = '';
+
+$ff		= make_flag('f',	'force-field',		"Force field",						1,	'opls'				);
+$norm		= make_flag('n',	'normal-opls-types',	"Use normal OPLS atom types (not special Tinker codes)"						);
+$parmfile	= make_flag('p',	'parameter-file',	"Master parameter file",				1,	'oplsaa_parameters3.dat'	);
+$rename		= make_flag('r',	'rename',		"Rename atom names based on atom types"								);
+$write		= make_flag('w',	'write',		"Write unassigned atoms to the screen"								);
+$verbose	= make_flag('v',	'verbose',		"Verbose operation - equivalent to -r -w"							);
+
+@arguments = get_arguments2('>=1');
+
+if ($verbose) {
+	$rename = 1;
+	$write = 1;
+}
+
+@acceptable_ff = ('opls');
+
+if (defined $ff && $ff eq 'opls'){
+	# Read parameter file
+
+	if (!defined $parmfile) {
+		silico_msg('d', "No parameter database was specified!\n",
+				"Please select a parameter file using the -p flag.\n");
+	}
+
+	$parameters = read_opls_params($parmfile);
+
+	if (!defined $parameters) {
+		silico_msg('d', "Unable to open master parameter file $parmfile!\n");
+	}
+}
+
+foreach $arg (@arguments) {
+
+	my $filebase;
+	my $mol;
+	my $mols;
+	my $opts_string;
+	
+	$filebase = get_filebase($arg);
+	$mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+
+	foreach $mol (@$mols) {
+	
+		my @unassigned_list;
+		my $total_charge;
+
+		molecule_check_and_fix_connectivity($mol);
+		mol_label_functional_group($mol);
+		mol_bonded_interactions($mol);
+	
+		if ($ff eq 'opls') {
+			if (!get_flag('quiet', 'l')) {
+				print "\n";
+				print "Generating Tinker OPLS-AA atom types\n";
+				print "\n";
+			}
+			
+			if ($norm) {
+				mol_type_oplsaa($mol, 1);
+			} else {
+				mol_type_oplsaa($mol);
+			}
+			
+			assign_opls_params($mol, $parameters);
+		} elsif (defined $ff) {
+			silico_msg('d', "No instructions for force field $ff!\n",
+					"Please choose one of [".join(@acceptable_ff, ', ')."].\n");
+		} else {
+			silico_msg('d', "No force field selected!\n",
+					"Please choose a force field using the -f flag.\n");
+		}
+	
+		# Put unassigned residues in a Sybyl set 
+		make_atomset($mol, 'UNASSIGNED_ATOM', 'UNASSIGNED_ATOM');
+		make_atomset($mol, 'UNASSIGNED_BOND', 'UNASSIGNED_BOND');
+		make_atomset($mol, 'UNASSIGNED_ANGLE', 'UNASSIGNED_ANGLE');
+		make_atomset($mol, 'UNASSIGNED_DIHEDRAL', 'UNASSIGNED_DIHEDRAL');
+		make_atomset($mol, 'UNASSIGNED_IMPROPER', 'UNASSIGNED_IMPROPER');
+		
+		# Make a grand unassigned set
+		make_atomset($mol, 'UNASSIGNED', 'UNASSIGNED_ATOM', 'UNASSIGNED_BOND', 'UNASSIGNED_ANGLE', 'UNASSIGNED_DIHEDRAL', 'UNASSIGNED_IMPROPER');
+		
+		if (defined $mol->{ATOMSET}{UNASSIGNED}[0]) {
+		
+			silico_msg('n', "Unassigned atoms, bonds, angles, dihedrals and impropers recorded in \"UNASSIGNED\" sets\n");
+		}
+		
+		# Do atom_printout for all unassigned atoms if print flag is set
+		if ($write) {
+			print heading("Atoms with unassigned parameters\n");
+			silico_msg('n', "these are not in angle or dihedral order\n");
+			
+			@unassigned_list = qw(UNASSIGNED_ATOM UNASSIGNED_BOND UNASSIGNED_ANGLE UNASSIGNED_DIHEDRAL UNASSIGNED_IMPROPER); 
+			
+			foreach (@unassigned_list) {
+			
+				my $atom;
+				
+				print "-- $_ --\n";
+				foreach $atom (@{$mol->{ATOMSET}{$_}}) {
+					atom_printout($atom);
+					print "-----------\n";
+				}
+			}
+		}
+
+		# Rename flag replaces original atom name with STYPE_GTYPE_NUM where
+		# STYPE is the specific atom type
+		# GTYPE is the opls generic atom type
+		# NUM is the atom number 
+		
+		if ($rename) {
+	
+			my $atom;
+			
+			silico_msg('n', "Changing atom names to atom type\n");
+			foreach $atom (atoms($mol)) {
+				$atom->{NAME} = $atom->{CHARMM_TYPE};
+				$atom->{NAME}.= '_'.($atom->{OPLS_TYPE2} || 'UNK') if $ff eq 'opls';
+				$atom->{NAME}.= "_$atom->{NUM}";
+			}
+		}	
+		
+		# Check charges
+		if (!get_flag('quiet', 'l')) {
+			$| = 1;
+			print "Checking charge of molecule $mol->{NAME}...";
+		}
+		$total_charge = mol_calc_charge ($mol);
+		
+		if ($total_charge eq 'ERR') {
+			silico_msg('w', "Molecule contains atoms with undefined charges\n");
+		} elsif ($total_charge != int ($total_charge)) {
+			silico_msg('w', "Overall charge ($total_charge) for this molecule is not integral\n");
+		} else {
+			if (!get_flag('quiet', 'l')) {
+				print "charge: $total_charge\n";
+				print "\n";
+			}
+		}
+		
+		$| = 0;		
+	}
+	
+	write_tinker_xyz($mols, "$filebase"."_"."$ff".".xyz", $options);
+	
+	$opts_string = $options;
+	add_option('NOSORT', $opts_string);
+	
+	write_mol2($mols, "$filebase"."_"."$ff".".mol2", $opts_string);
+	
+	if ($norm) {
+		write_tinker_prm ($mols, "$filebase"."_"."$ff".".prm", $ff, $parameters, $options);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

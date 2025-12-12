@@ -1,0 +1,158 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_add_segid
+#? Add a SEGID and write a pdb file
+#F
+#; -segid_<SEGID> 
+#; -i_<input_format> Input format, any or pdb (default any)
+#; -o_<output_format> Output format, all silico formats (default pdb) 
+#; -d Delete disordered (ALT) atoms
+#; -s use SINGLE option
+#; -prefix Add 'new_' to start of output file and do not add '_new' to end
+#; -debug
+#SF
+#. $Revision: 1.4.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $atom;
+my $arg;
+my @arguments;
+my $ens;
+my $filebase;
+my $iformat;
+my $mol;
+my $options;
+my $prefix;
+my $segid;
+my $starttime = (times)[0];
+use vars qw($debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_add_segid", '$Revision: 1.4.2.1.2.1 $');
+
+use vars qw ($silico_readsingle);
+
+$Silico::debug = 0; # Don't warn me
+
+$iformat	= make_flag('i', 'input-format', "Input format", 1);
+add_option('DELALT', $options) if make_flag('d', 'delete-alt', "Delete disordered (ALT) atoms");
+add_option('SINGLE', $options) if make_flag('s', 'single', "Use SINGLE option");
+$segid = make_flag('segid', 'segid', "SEGID added to all atoms in file", 1, undef, 1);
+$prefix = make_flag('prefix', 'add-prefix', "Add 'new_' to start of output file and do not add '_new' to end", undef);
+
+@arguments = get_arguments2('>=1');
+
+
+$segid =~ s/ //g;
+chomp $segid;
+
+silico_msg ('w', "\nSegid '$segid' is longer than four characters.  This may cause problems\n\n") if length($segid) > 3;
+
+print "Adding SEGID '$segid'\n";
+
+if ($prefix) {
+	set_default_oappend (' ');
+}
+
+foreach $arg (@arguments) {
+		
+	my $filebase;
+	my $mols;
+	
+	silico_msg('c', "File: $arg\n");
+	$filebase = get_filebase($arg);
+
+	if ($iformat && $iformat eq 'pdb') { 
+		$mols = read_pdb($arg, undef, undef, $options);
+	} elsif (get_flag('single','l')) {
+		undef $mols;
+		while ($ens = read_mol_any($arg, undef, undef, $options)) {
+			push @$mols, $ens->[0];
+		}
+	} else {
+		 $mols = read_mol_any($arg, undef, undef, $options);
+	}
+		
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	foreach $mol (@$mols) {
+	
+		foreach $atom (atoms($mol)) {
+			$atom->{SEGID} = $segid;
+		}
+	}
+
+	if ($prefix) {
+		write_pdb($mols, "new_$filebase\.pdb");
+	} else {
+		write_pdb($mols);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

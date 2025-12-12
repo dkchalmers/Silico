@@ -1,0 +1,204 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! pdb_rename_hydrogens
+#? Rename hydrogen atoms so that they have the correct PDB nomenclature.
+#  Using the -charmm flag will produce charmm27 atom names. Using the
+#  -cyana flag will produce cyana2 names.
+#. Note: Particular attention must be paid to the delta-carbon of isoleucine
+#  residues, which is also renamed. The -charmm flag will name ILE CD as CD.
+#  The -cyana flag will name ILE CD as CD1.
+#. C-terminus and N-terminus hydrogen names are currently not generated.
+#F
+#; -charmm Generate charmm27 atom names
+#; --charmm-atom-names
+#; -cyana Generate cyana2 atom names
+#; --cyana-atom-names
+#; -f <filename> Filename containing atom names and connectivities
+#; --datafile=<filename> 
+#; -d Delete any hydrogens that can not be given a name
+#; --delete-unknown-h
+#; -o <format> Output file format (default PDB)
+#; --output-file-format=<format>
+#SF
+#. David K. Chalmers, 3 February 2000
+#. $Revision: 1.17.2.1.2.3 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title ("pdb_rename_hydrogens", '$Revision: 1.17.2.1.2.3 $');
+
+my $charmm =   make_flag('charmm', 'charmm-atom-names', "Generate charmm27 atom names");
+my $cyana =    make_flag('cyana', 'cyana-atom-names', "Generate cyana2 atom names");
+
+my $datafile = 'amino_acid_atoms.dat';
+$datafile = 'charmm_amino_acid_atoms.dat' if $charmm;
+$datafile = 'cyana_amino_acid_atoms.dat' if $cyana;
+
+   $datafile = make_flag('f', 'datafile', "File containing atom names and connectivities", 1, $datafile);
+my $del =      make_flag('d', 'delete-unknown-h', "Delete unknown hydrogens atoms");
+my $fix_asp_gln = make_flag('fix_nq', 'rename-asn-gln', 'Rename asparagine and gln hydrogens. E.g. rename HD22 to 2HD2');
+
+my @arguments = get_arguments2('>=1');
+
+# Loop over input arguments
+foreach my $arg (@arguments) {
+
+	my $rename1 = 0;
+	my $rename2 = 0;
+	my $rename3 = 0;
+	
+	print "File: $arg\n" if (!quiet());
+	
+	my $filebase = get_filebase($arg);
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	# Output format: that set, or the source file type, or Mol2
+	my $oformat = get_sflag('o') || $mols->[0]{SOURCE_FILE_TYPE} || 'mol2';
+	
+	foreach my $mol (@$mols) {
+
+		my $atom;
+		my $missing;
+
+		 if ($fix_asp_gln) {
+
+			my $count = 0;
+                        my $keys;
+                        %$keys = qw(
+				HD21 1HD2 
+				HD22 2HD2 
+                        );
+
+				#1HD2  HD21
+				#2HD2  HD22
+                        foreach $atom (atoms($mol)) {
+
+                                if ($keys->{$atom->{NAME}}) {
+                                        $atom->{NAME} = $keys->{$atom->{NAME}};
+					++$count;
+                                }
+                        }
+			silico_msg('c', "Renamed $count hydrogen atoms\n");
+                }
+		
+		# If we are using charmm then rename the ile CD atom to 'CD'
+		if ($charmm) {
+			
+			foreach $atom (atoms($mol)) {
+				
+				if ($atom->{SUBNAME} =~ /ILE/ && $atom->{NAME} =~ /CD/) {
+					$atom->{NAME} = 'CD';
+					++$rename1;
+				}
+				
+				if ($atom->{SUBNAME} =~  /HIS/ ) {
+					$atom->{SUBNAME} = 'HSD';
+					++$rename2;
+				}
+			}
+		}
+		
+		# If we are using cyana then rename the ile CD atom to 'CD1'
+		if ($cyana) {
+			
+			foreach $atom (atoms($mol)) {
+				
+				if ($atom->{SUBNAME} =~ /ILE/ && $atom->{NAME} =~ /CD/) {
+					$atom->{NAME} = 'CD1';
+					++$rename3;
+				}
+			}
+		}
+
+		silico_msg('n', "Renamed $rename1 ILE delta carbons to \"CD\"\n") if $rename1;
+		silico_msg('n', "Renamed $rename2 HIS residue atoms to \"HSD\"\n") if $rename2;
+		silico_msg('n', "Renamed $rename3 ILE delta carbons to \"CD1\"\n") if $rename3;
+		
+		connect_atoms_by_distance($mol);
+		if (!$fix_asp_gln) {
+			$missing = molecule_pdb_rename_h($mol, $datafile, $del);
+		
+			if ($missing) {
+				silico_msg('w', "$missing atoms in molecule \"$mol->{NAME}\" were not named using residue standards.\n",
+						"These have been renamed as \"HX\" in the output.\n");
+			}
+		}
+	}
+
+	print "\n";
+	
+	write_mol_any($mols, $filebase."_hfix", $oformat); 
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

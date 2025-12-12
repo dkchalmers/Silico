@@ -1,0 +1,375 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! find_close_atoms
+#F
+#; -n_<file> Index file
+#; -r_<string> Reference group (present in the index file)
+#; -t_<string> Target group (optional, present in the index file)
+#; -c_<number> Cutoff distance
+#; -i_<file> Initial time (ps)
+#; -ts_<num> Time step between molecules (ps)
+#; -noh Ignore hydrogen atoms
+#; -p Use periodic boundary conditions
+#; -f Print out a full report of close pairs of atoms
+#; -x_<number> Periodic cell X axis length
+#; -y_<number> Periodic cell Y axis length
+#; -z_<number> Periodic cell Z axis length
+#; -O_<string> Output file name
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $c;
+my $cell;
+my $close_atoms_count;
+my $cutoff;
+my $flag;
+my $full;
+my $i;
+my $igroup;
+my $index;
+my $indexfile;
+my $inittime;
+my $mol;
+my $molcount1;
+my $molcount2;
+my $mols;
+my $noh;
+my $outfile;
+my $pbc;
+my $periodic;
+my $ratom;
+my $refgroup;
+my $rflag;
+my @rlist;
+my $rnum;
+my $starttime = (times)[0];
+my $targetgroup;
+my $tatom;
+my $tflag;
+my @tlist;
+my $time;
+my $timestep;
+my $tnum;
+my $xcell;
+my $ycell;
+my $zcell;
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("find_close_atoms", '$Revision: 1.4.2.1.2.1 $');
+
+require silico_gromacs;
+
+$indexfile = make_flag('n', 'indexfile', "Index file", 1, undef, 1);
+$refgroup = make_flag('r', 'reference-group', "Reference group", 1, undef, 1);
+$targetgroup = make_flag('t', 'target-group', "Target group", 1, undef, 1);
+$cutoff = make_flag('c', 'cutoff', "Cutoff distance", 1, 3, undef, "decimal > 0");
+$inittime = make_flag('i', 'initial-time', "Time at first frame (ps)", 1, 0, undef, "decimal");
+$timestep = make_flag('ts', 'timestep', "Timestep between frames (ps)", 1, undef, undef, "decimal > 0");
+$noh = make_flag('noh', 'ignore-hydrogens', "Ignore hydrogen atoms");
+$periodic = make_flag('p', 'periodic-boundary-conditions', "Use periodic boundary conditions");
+$full = make_flag('f', 'full-report', "Provide a full report of pairs of close atoms");
+$xcell = make_flag('x', 'x', "Cell size X", 1, undef, undef, "decimal > 0");
+$ycell = make_flag('y', 'y', "Cell size Y", 1, undef, undef, "decimal > 0");
+$zcell = make_flag('z', 'z', "Cell size Z", 1, undef, undef, "decimal > 0");
+$outfile = make_flag('O', 'output-file-name', "Output file name", 1, undef, 1);
+
+@arguments = get_arguments2('>=1', 'none');
+
+# Read in the index
+$index = read_gromacs_indexfile($indexfile);
+if (!defined $index) {
+	silico_msg('d', "Could not create an index from file $indexfile!\n");
+}
+
+# Check that the group is actually present in the index
+$rflag = 0;
+$tflag = (defined $targetgroup ? 0 : 1);
+foreach $igroup (keys %$index) {
+	$rflag = 1 if $igroup eq $refgroup;
+	$tflag = 1 if (defined $targetgroup && $igroup eq $targetgroup);
+}
+if (!$rflag) {
+	silico_msg('d', "Group \"$refgroup\" not found in index file $indexfile!\n");
+} elsif (!$tflag) {
+	silico_msg('d', "Group \"$targetgroup\" not found in index file $indexfile!\n");
+}
+
+@rlist = sort { $a <=> $b } @{$index->{$refgroup}};
+if (defined $targetgroup) {
+	@tlist = sort { $a <=> $b } @{$index->{$targetgroup}};
+} else {
+	silico_msg('n', "No target group has been specified.\n",
+			"Target set of atoms will be all those not in the reference group.\n");
+}
+
+# Open the output file and print out some relevant info
+open(OUTFILE, ">$outfile") || file_write_error($outfile, 1);
+
+print OUTFILE "# Program: $0\n";
+print OUTFILE "# Run by user $ENV{USER} on ".`date`;
+print OUTFILE "# Index file: $indexfile\n";
+print OUTFILE "# Reference group: $refgroup\n";
+if (defined $targetgroup) {
+	print OUTFILE "# Target group: $targetgroup\n";
+} else {
+	print OUTFILE "# Target group unspecified. Using all atoms not in reference group.\n";
+}
+print OUTFILE "# Initial time: $inittime ps\n" if defined $inittime;
+print OUTFILE "# Timestep: $timestep ps\n" if defined $timestep;
+print OUTFILE "# Cutoff distance: $cutoff\n" if defined $cutoff;
+print OUTFILE "# Using periodic boundary conditions\n" if defined $periodic;
+print OUTFILE "# Using fixed X cell length: $xcell\n" if defined $xcell;
+print OUTFILE "# Using fixed Y cell length: $ycell\n" if defined $ycell;
+print OUTFILE "# Using fixed Z cell length: $zcell\n" if defined $zcell;
+print OUTFILE "# \n";
+print OUTFILE "#Mol\tTime\tClose atoms\n";
+
+$molcount1 = 0;
+$molcount2 = 0;
+
+# For each file...
+foreach $arg (@arguments) {
+	
+	undef $mol;
+	undef $mols;
+	
+	# Read in molecules from this file
+	$mols = read_mol_any($arg);
+	if (!defined $mols->[0]) {
+		file_read_error($arg);
+		next;
+	}
+	
+	if ($full) {
+		open (FULLREPORT, ">".get_filebase($arg)."_close_atoms.txt") || die;
+	}
+	
+	# For each molecule...
+	foreach $mol (@$mols) {
+		
+		$close_atoms_count = 0;
+		undef $i;
+		undef $tatom;
+		undef $time;
+		undef $cell;
+		undef $pbc;
+		
+		++$molcount1;
+		
+		if ($periodic) {
+			
+			$pbc = 1;
+		
+			if (!$xcell || !$ycell || !$zcell) {
+				if (!mol_check_unit_cell($mol)) {
+					silico_msg('w', "No available unit cell axis data!\n",
+							"Molecule: $molcount1 (name: \"$mol->{NAME}\")\n",
+							"Periodic boundary conditions for this molecule are disabled.\n");
+					$pbc = 0;
+				} elsif ($mol->{CELL_ALPHA} != 90 || $mol->{CELL_BETA} != 90 || $mol->{CELL_GAMMA} != 90) {
+					silico_msg('w', "Molecule's crystal is not cubic!\n",
+							"Molecule: $molcount1 (name: \"$mol->{NAME}\")\n",
+							"Periodic boundary conditions for this molecule are disabled.\n");
+					$pbc = 0;
+				}
+			}
+			
+			if ($pbc == 1) {
+				$cell->[0] = $xcell || $mol->{CELL}[0];
+				$cell->[1] = $ycell || $mol->{CELL}[0];
+				$cell->[2] = $zcell || $mol->{CELL}[0];
+			}
+		}
+				
+		if (defined $inittime && defined $timestep) {
+			$time = $inittime + ($timestep*$molcount2);
+		} else {
+			$time = 0;
+		}
+				
+		# Prepare a list of target atoms
+		if (!defined $tlist[0]) {
+			$i = 0;
+			foreach (0..$#{$mol->{ATOMS}}) {
+				
+				undef $c;
+				
+				$c = $_ + 1;
+				if ($i <= $#rlist && $c == $rlist[$i]) {
+					++$i;
+					next;
+				} else {
+					push @tlist, $c;
+				}
+			}
+		}
+		
+		# Skip this molecule if either the reference group or the target group
+		# lies outside it.
+		if (	($rlist[$#rlist] > $#{$mol->{ATOMS}} + 1)
+				||
+			($tlist[$#tlist] > $#{$mol->{ATOMS}} + 1)	) {
+			
+			silico_msg('w', "Molecule $molcount1 (\"$mol->{NAME}\") is too small!\n",
+					"That is, either the reference or target group, or both, refer to nonexistent atoms.\n",
+					"This molecule has been skipped.\n");
+			next;
+		}
+		
+		if ($full) {
+			print FULLREPORT heading("Molecule $molcount1 (\"$mol->{NAME}\")\n");
+		}
+		
+		# What we want to calculate is the number of atoms in the target
+		# group which are within $cutoff of one or more atoms in the
+		# reference group.
+		
+		# For each atom in the target group...
+		foreach $tnum (@tlist) {
+			
+			undef $tatom;
+			undef $rnum;
+			$flag = 0;
+			
+			$tatom = $mol->{ATOMS}[$tnum-1];
+			
+			next if $noh && $tatom->{ELEMENT} eq 'H';
+			
+			# For each atom in the reference group...
+			foreach $rnum (@rlist) {
+				
+				undef $ratom;
+				
+				$ratom = $mol->{ATOMS}[$rnum-1];
+				
+				next if $noh && $ratom->{ELEMENT} eq 'H';
+				
+				# Skip if we are further away along any individual
+				# coordinate. Also skip if we are further away in total.
+				if ($pbc) {
+					next if (	abs($tatom->{X} - $ratom->{X}) > $cutoff
+								&&
+							abs($tatom->{X} - $ratom->{X}) < $cell->[0] - $cutoff
+						);
+					next if (	abs($tatom->{Y} - $ratom->{Y}) > $cutoff
+								&&
+							abs($tatom->{Y} - $ratom->{Y}) < $cell->[1] - $cutoff
+						);					
+					next if (	abs($tatom->{Z} - $ratom->{Z}) > $cutoff
+								&&
+							abs($tatom->{Z} - $ratom->{Z}) < $cell->[2] - $cutoff
+						);
+					next if sqrt(distance_periodic_sq($tatom, $ratom, $cell)) > $cutoff;
+				} else {
+					next if abs($tatom->{X} - $ratom->{X}) > $cutoff;
+					next if abs($tatom->{Y} - $ratom->{Y}) > $cutoff;
+					next if abs($tatom->{Z} - $ratom->{Z}) > $cutoff;
+					next if distance($tatom, $ratom) > $cutoff;
+				}
+				
+				# At this point, we have established that at least one
+				# reference atom lies within $cutoff of the target atom.
+				$flag = 1;
+				
+				# We do not need to do any more.
+				if ($full) {
+					print FULLREPORT "$ratom->{NUM}";
+					print FULLREPORT " $ratom->{NAME}";
+					print FULLREPORT " ($ratom->{SUBNAME}";
+					print FULLREPORT "$ratom->{SUBID})";
+					print FULLREPORT "\t";
+					print FULLREPORT "$tatom->{NUM}";
+					print FULLREPORT " $tatom->{NAME}";
+					print FULLREPORT " ($tatom->{SUBNAME}";
+					print FULLREPORT "$tatom->{SUBID})";
+					print FULLREPORT "\t";
+					print FULLREPORT distance($tatom, $ratom)."\n";
+					
+				} else {
+					last;
+				}
+			}
+			
+			# Increment the counter if this atom has been flagged as a close
+			# atom.
+			++$close_atoms_count if $flag;
+		}
+		
+		++$molcount2;
+		
+		silico_msg('c', "Found $close_atoms_count close atoms.\n");
+		
+		print OUTFILE "$molcount2\t$time\t$close_atoms_count\n";
+	}
+	
+	close FULLREPORT if $full;
+}
+
+close OUTFILE;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

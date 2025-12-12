@@ -1,0 +1,418 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#<
+#! write_itp
+#? Read and Write Gromacs .itp topology files
+#F
+#; -coord <file> Add coordinates from <file> into itp molecule.  The coordinate file and ITP file are checked for consistency.
+#; -r Replace peptide backbone parameters with standard gromacs types
+#; -heavy Multiply hydrogen mass by a factor of 4 and subtract the additional mass from the parent heavy atom
+#  (make heavy hydrogens)
+#; -resname Set residue name
+#; -sort Sort atoms into canonical SMILES order (requires coord file)
+#; -rename Rename atoms using a simple naming scheme (requires coord file)
+#; -rmethod Renaming method (see mol_rename_atoms() subroutine) [consecutive, consecutinve-h, element, element-h', 1, 'element-h
+#; -dump  Dump all bonds, angles, dihedrals, etc  as individual molecules to itp-data directory to a assist with debugging toplogies
+#. Created: DKC 2001 and on...
+#. $Revision: 1.1.2.2.2.16 $
+#>
+
+use strict;
+
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+use vars qw($debug);
+
+my $dihedral_hash;    # Note: global
+my $hash;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+require silico_gromacs;
+
+print_title("write_itp", '$Revision: 1.1.2.2.2.16 $');
+
+my $coordf  = make_flag('coord',   'coordinate-molecule',     'Add coordinates from this file into itp molecule', 1);
+my $replace = make_flag('r',       'replace-backbone-params', 'Replace peptide backbone parameters with standard gromacs types');
+my $heavy   = make_flag('heavy',   'make-heavy-h',            'Make heavy hydrogens');
+my $resname = make_flag('resname', 'set-resname',             'Set residue name', 1);
+my $sort    = make_flag('sort',    'sort-canonical',          'Sort atoms into canonical SMILES order');
+my $rename  = make_flag('rename',  'rename',                  'Rename atoms');
+my $rmethod = make_flag('rmethod', 'rename-method', 'Renaming method (see mol_rename_atoms() subroutine) [consecutive, consecutinve-h, element, element-h]', 1,
+	'element-h');
+my $dump = make_flag('dump', 'dump', 'Write all bonds, angles, dihedrals, etc  as individual molecules to itp-data directory');
+
+make_flag(undef, '   allow-missing-parameters', 'Enable .itp files with missing parameters to be processed. Beware');
+
+push my @f, "sort" if $sort;
+push @f, "rename" if $rename;
+push @f, "heavy"  if $heavy;
+my $string = join("_", @f);
+set_default_oappend($string) if $string;
+
+my @arguments = get_arguments2('>=1');
+
+my $cmol;
+foreach my $arg (@arguments) {
+
+	print "File: $arg\n" if (!get_flag('quiet', 'l'));
+
+	my $filebase = get_filebase($arg);
+
+	my $cmol;
+	my $mols;
+	my $hasitp;
+
+	if ($arg =~ /\.itp/) {
+
+		$mols = read_gromacs_itp($arg);
+		$cmol = read_coord_mol($coordf) if $coordf;
+		$hasitp  = 1;
+
+	} else {
+	
+		$mols = read_mol_any($arg);
+	}
+
+	my $i     = 0;
+	my $count = 0;
+	
+	foreach my $mol (@$mols) {
+	
+		print "Molecule: $i\n" if (!get_flag('quiet', 'l'));
+		++$i;
+
+		if ($hasitp) {
+			
+			# Do nothing
+		
+		} elsif ($cmol) {
+			$mol = merge_itp_coord($mol, $cmol);
+		} else {
+		
+			silico_msg('c', "Generating approximate itp data. Note - this is not suitable for MD simulations\n");
+			make_gromacs_itp($mol);
+		}
+
+		if ($resname) {
+
+			$mol->{NAME} = $resname;
+
+			foreach my $atom (atoms($mol)) {
+				$atom->{SUBNAME} = $resname;
+			}
+		}
+
+		gmx_make_heavy_h($mol) if $heavy;
+		$count = gmx_replace_peptide_dihedrals($mol) if $replace;
+
+		silico_msg('w', "Rename, data and sort options require a coordinate file") if ($dump || $rename || $sort) && !$coordf;
+
+		silico_msg('c', "Replaced $count dihedral parameters\n") if $replace;
+
+		if ($sort) {
+			sort_itp_by_smiles($mol);
+		}
+
+		if ($rename) {
+			mol_rename_atoms($mol, $rmethod);
+		}
+
+		if ($dump) {
+			dump_itp_data($mol);
+		}
+
+		gromacs_check_itp($mol) if $coordf;
+	}
+
+	ensemble_printout($mols, 'all')    if $Silico::debug;
+	write_mol_any($mols, undef, 'pdb') if $coordf;
+	write_gromacs_itp($mols);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+###############
+# Subroutines #
+###############
+
+
+
+sub merge_itp_coord {
+
+	#<
+	#? Merge coordinates into ITP molecule
+	#; Requires: ITP molecule, coordinate molecule
+	#; Returns: molecule
+	#>
+	
+	#
+	# Note there seems to be a simliar routine in silico_gromacs already
+	#
+
+	my $mol  = $_[0];    # ITP molecule
+	my $cmol = $_[1];    # Coordinate molecule
+
+	my $warn = 0;
+
+	# Delete old MATCH and MATCH_COUNT values
+	foreach my $atom ($cmol) {
+		delete $atom->{MATCH_COUNT};
+		delete $atom->{MATCH};
+	}
+
+	my $death = 0;
+	foreach my $atom (atoms($mol)) {
+		my $n = $atom->{NAME};
+		my $s = $atom->{SUBID};
+		$n =~ s/ //g;
+		$s =~ s/ //g;
+		my $key   = "$n\_$s";
+		my $tatom = $hash->{$key};    # Template atom
+
+		if ($tatom) {
+
+			$atom->{X}     = $tatom->{X};
+			$atom->{Y}     = $tatom->{Y};
+			$atom->{Z}     = $tatom->{Z};
+			$atom->{MATCH} = $tatom;
+			++$tatom->{MATCH_COUNT};
+			if ($tatom->{MATCH_COUNT} > 1) {
+				silico_msg('w', "Multiple matches ($tatom->{MATCH_COUNT}) for atom: $key\n");
+				++$death;
+			}
+		} else {
+			silico_msg('w', "No matching itp atom found for atom: $key\n");
+			++$death;
+		}
+	}
+	
+	silico_msg('d', "Problems encountered\n") if $death;
+
+	foreach my $atom (atoms($mol)) {
+		$atom->{SMILES_POS} = $atom->{MATCH}{SMILES_POS};
+	}
+
+	delete $mol->{HAS_NO_COORDS};
+
+	return $mol;
+}
+
+sub read_coord_mol {
+
+	#<
+	#? Read in coordinate molcule, check connectivity, fix ATB problems
+	#; Requires: filename
+	#; Returns: molecule
+	#>
+
+	my $cmol = $_[0];
+
+	my $ens = read_mol_any($cmol);
+	die "Could not read file $cmol\n" if !defined $ens->[0];
+
+	$cmol = $ens->[0];
+	molecule_check_and_fix_connectivity($cmol);
+
+	my $flag;
+	foreach my $atom (atoms($cmol)) {
+
+		# Fix ATB pdb file residue numbering which starts from 0
+		$flag = 1 if ($atom->{SUBID} == 0);
+		++$atom->{SUBID} if $flag;
+
+		my $n = $atom->{NAME};
+		my $s = $atom->{SUBID};
+		$n =~ s/ //g;
+		$s =~ s/ //g;
+		my $key = "$n\_$s";
+		$hash->{$key} = $atom;
+	}
+
+	print heading("Atom keys (<atom name>_<substructure id>)");
+	my @f = keys(%$hash);
+	my $i = 0;
+	foreach (@f) {
+		++$i;
+		print "$_ ";
+		if ($i == 20) {
+			$i = 0;
+			print "\n";
+		}
+	}
+	print "\n" if $i != 0;
+	print "\n";
+
+	return ($cmol);
+}
+
+sub sort_itp_by_smiles {
+
+	#<
+	#? Sort itp file by canonical smiles
+	#  ascending order by atom bumber
+	#; Requires: molecule
+	#; Returns: nothing
+	#>
+
+	my $mol = $_[0];
+
+	mol_smiles_string($mol) if !defined $mol->{SMILES};
+
+	# Smiles pos calculated based on template molecule
+	my $ctable = molecule_reorder($mol, "SMILES_POS");    #
+
+	my @list = qw(GMX_BONDS GMX_PAIRS GMX_ANGLES GMX_DIHEDRALS GMX_EXCLUSIONS);
+
+	foreach my $l (@list) {
+		foreach my $thing (@{ $mol->{$l} }) {
+			foreach (@{ $thing->{ATOMS} }) {
+				$_ = $ctable->[$_];
+			}
+		}
+	}
+
+	sort_itp_by_atom_number($mol);
+}
+
+sub sort_itp_by_atom_number {
+
+	#<
+	#? Sort GMX_BONDS GMX_PAIRS GMX_ANGLES GMX_DIHEDRALS GMX_EXCLUSIONS in
+	#  ascending order by atom bumber
+	#; Requires: molecule
+	#; Returns: nothing
+	#>
+
+	my $mol = $_[0];
+
+	my @list = qw(GMX_BONDS GMX_PAIRS GMX_ANGLES GMX_DIHEDRALS GMX_EXCLUSIONS);
+
+	# Sort GMX_* into numerical order by atom
+	foreach my $l (@list) {
+		@{ $mol->{$l} } = sort atom_number_sort_function @{ $mol->{$l} };
+	}
+}
+
+sub atom_number_sort_function {
+
+	#<
+	#? Sort function for sort_itp_by_atom_number()
+	#>
+
+	foreach my $i (0 .. 3) {
+
+		return 0  if !defined $a->{ATOMS}[$i];
+		return 1  if $a->{ATOMS}[$i] > $b->{ATOMS}[$i];
+		return -1 if $a->{ATOMS}[$i] < $b->{ATOMS}[$i];
+	}
+
+	return 0;
+
+}
+
+sub gmx_replace_peptide_dihedrals {
+
+	#<
+	#? Replace the dihedral parameters of peptide backbone atoms
+	#; Requires: molecule
+	#; Returns: number of dihedrals replaced
+	#>
+
+	my $mol = $_[0];
+
+	my $count = 0;
+
+	%$dihedral_hash = qw (N_CH1_C_N gd_45  CH1_N_C_CH1 gd_14  C_CH1_N_C gd_44);
+
+      DIHEDRAL: foreach $a (@{ $mol->{DIHEDRALS} }) {
+
+		next if $a->{GMX_FUNC} == 2;
+		my $a1;
+		my $a2 = $mol->{ATOMS}[ $a->{ATOMS}[1] ];
+		my $a3 = $mol->{ATOMS}[ $a->{ATOMS}[2] ];
+		my $a4;
+
+		foreach $a1 (connected($a2, $mol)) {
+			next if $a1 == $a3;
+			foreach $a4 (connected($a3, $mol)) {
+				next if $a4 == $a2;
+
+				my @types;
+				foreach ($a1, $a2, $a3, $a4) {
+					push @types, $_->{TYPE};
+				}
+
+				my @types2 = reverse @types;
+				my $key1   = join "_", @types;
+				my $key2   = join "_", @types2;
+
+				#print "key: $key1\n";
+				#print "key: $key2\n";
+
+				my $key;
+				foreach $key ($key1, $key2) {
+					if ($dihedral_hash->{$key}) {
+
+						$a->{CODE}   = $dihedral_hash->{$key};
+						$a->{FORMAT} = 'code';
+						@{ $a->{ATOMS} } = ($a1->{NUM} - 1, $a2->{NUM} - 1, $a3->{NUM} - 1, $a4->{NUM} - 1);
+						++$count;
+						next DIHEDRAL;
+					}
+				}
+			}
+		}
+	}
+	return $count;
+}
+
+sub silico_setup {
+
+	#<
+	#? Locate the Silico libraries and read in the parent library, silico.pm
+	#; Sets: $Silico::home_dir, $Silico::lib_dir
+	#; Requires: nothing
+	#; Returns: nothing
+	#>
+
+	die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+	$Silico::home_dir = $ENV{SILICO_HOME} . "/";
+	$Silico::lib_dir  = $Silico::home_dir . "lib/";
+	push @INC, substr($Silico::lib_dir, 0, -1);
+
+	require silico;
+}

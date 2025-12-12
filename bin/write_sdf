@@ -1,0 +1,189 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! write_sdf
+#? Read any silico format and write an sdf file.
+#. Optionally add a 'name' field, rename the molecule or remove SDF data
+#F
+#; -n Number of structures to read
+#; -r SDF data field to use if renaming molecules
+#; -a Add 'NAME' field to SDF_DATA using molecule name encoded in the first line of the file
+#; -f Add 'FILENAME' field to SDF_DATA using using input filename
+#; -clean  Remove all sdf data (except name)
+#; -noparse Do not parse SDF data (Only works with SDF input files)
+#; -nosingle Do not use 'single' molecule reading routines
+#; -2D Force structure to be written as 2D
+#; -3D Force structure to be written as 3D
+#SF
+#. Created: DKC 2000 - 2002
+#. $Revision: 1.1.2.2.2.6 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+my $arg;
+my @arguments;
+my $end;
+my $name;
+my $options = '';
+my $oformat;
+my $oname;
+my $start;
+my $starttime = (times)[0];
+my $woptions = '';
+
+use vars qw($debug);
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("write_sdf", '$Revision: 1.1.2.2.2.6 $');
+
+my $max		= make_flag('n', undef, "Number of structures to read", 1, undef, undef, "INT > 0");
+my $rename	= make_flag('r', undef, "SDF Data field to use if renaming molecule", 1);
+my $addname	= make_flag('a', 'add-name', "Add 'NAME' field to SDF data using molecule name");
+my $addfile 	= make_flag('f', 'add-file', "Add 'FILENAME' field to SDF data using filename");
+my $clean 	= make_flag('clean', 'clean-data', "Remove all SDF data except 'name'");
+my $noparse	= make_flag('noparse', 'no-parse', "Do not parse SDF data (Only works with SDF input files)");
+   $woptions .= "2D" if make_flag('2D', undef, "Force structure to be written as 2D");
+   $woptions .= "3D" if make_flag('3D', undef, "Force structure to be written as 3D");
+my $nosingle 	= make_flag('nosingle', 'nosingle', "No not use single molecule read/write routines");
+
+$options .= 'NOPARSE' if $noparse;
+
+$Silico::debug = $Silico::debug; #Shut up whinge about only using once
+
+@arguments = get_arguments2('>=1');
+
+$start = get_sflag('ss');
+$end = get_sflag('ms');
+
+foreach $arg (@arguments) {
+	
+	my $mol;
+	my $mols;
+	my $fh_in;
+	my $fh_out;
+	
+	silico_msg('d', "Noparse option only works with SDF input files\n") if $noparse && $arg !~ /\.sdf$/;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	if ($nosingle) {
+		$mols = read_mol_any($arg, $start, $max, $options);
+		
+		if (!defined $mols->[0]) {
+			mol_read_error($arg);
+			next;
+		}
+	}
+	
+	my $count = -1;
+	while(1) {
+
+		++$count;
+		if (!$nosingle) {
+			$mol = read_mol_single($fh_in, $arg);
+		} else {
+			$mol = $mols->[$count];
+		}
+
+		last if !defined $mol;
+		last if !$nosingle && $end && $count > $end;
+		next if !$nosingle && $start && $count < $start;
+		
+		if ($rename) {
+			if (!defined $mol->{SDF_DATA}{$rename}) {
+				silico_msg('w', "\$mol->{SDF_DATA}{$rename} is not defined!\n",
+						"Renaming molecule as \"Mol\".\n");
+				$mol->{NAME} = 'Mol';
+			} else {
+				$mol->{NAME} = $mol->{SDF_DATA}{$rename};
+			}		
+		}
+	
+		if ($addname) {
+			$mol->{SDF_DATA}{NAME} = $mol->{NAME} || "Mol_$count\n";
+		}
+		if ($addfile) {
+			$mol->{SDF_DATA}{FILENAME} =  "$arg";
+		}
+		if ($clean) {
+			$name =  $mol->{SDF_DATA}{NAME} || $mol->{SDF_DATA}{name} || $mol->{NAME};
+			delete $mol->{SDF_DATA};
+			$mol->{SDF_DATA}{NAME} = $name;
+		}
+
+		if (!$nosingle) {
+			write_mol_single($fh_out, $mol, undef, 'sdf');
+		}
+	}
+	
+	ensemble_printout($mols, 'all') if $Silico::debug;
+
+	if ($nosingle) {
+		write_mol_any($mols, undef, 'sdf', $woptions);
+	}
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

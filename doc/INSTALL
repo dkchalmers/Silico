@@ -1,0 +1,25 @@
+Installation
+============
+
+1.  Copy the Silico directory tree to an appropriate location
+
+2.  Set the environment variable SILICO_HOME to point to the silico directory
+
+3.  Include $SILICO_HOME/bin in your path
+
+    e.g.  For the C shell
+
+    setenv SILICO_HOME /apps/scripts/silico1.01
+    setenv PATH $PATH\:$SILICO_HOME/bin
+
+4.  Make the documentation
+
+    Silico uses a simple markup scheme for comments written at the 
+    start of each program script and in each subroutine.  
+    See lib/silico_doc.pm for more information. 
+
+    Use the command 
+
+    $SILICO_HOME/doc/makedoc
+
+    to run the script 'makedoc' to generate the documentation

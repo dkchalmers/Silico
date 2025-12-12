@@ -1,0 +1,129 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! sdfsplit
+#? Fast split program to divide an sdf file into smaller files without parsing
+#  the file
+#. Use:
+#, sdfsplit file.sdf -s fnumbered produces file_00001.sdf, file_00002.sdf ...
+#, sdfsplit file.sdf -s fnumbered_2 produces file_01.sdf, file_02.sdf ...
+#, sdfsplit file.sdf -s numbered produces file_1.sdf, file_2.sdf ...
+#, sdfsplit -r <CODE> renames molecules using the data in field <CODE>
+#F
+#, -n <num> Number of structures to write to each output file (default 1)
+#, -nf <num> Number of files
+#, -f <field> Split structures into files by specified field
+#, -r <datafield> Rename molecules using the given SDF data field
+#, -s (numbered / fnumbered) Output style
+#, -d <dirname> Output directory
+#SF
+#. $Revision: 1.20.2.1.2.6 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("sdfsplit", '$Revision: 1.20.2.1.2.6 $');
+
+require silico_split;
+
+#setup_flags();
+
+my $size =   make_flag('n', 'structures-per-file' , 'Number of structures in output file', 1);
+my $nf =     make_flag('nf', 'num-files' , 'Number of files', 1);
+my $field =  make_flag('f', 'split-by-field' , 'Split structures by specified field', 1);
+my $rename = make_flag('r', 'rename', 'Rename molecules using SDF data field', 1);
+my $ostyle = make_flag('s', 'output-style', 'Output style (numbered, fnumbered [fnumbered]', 1, 'fnumbered');
+my $dir =    make_flag('d', 'output-directory', 'Output directory', 1, undef);
+
+@arguments = get_arguments2('>=1');
+
+$dir ||= '';
+
+if ($rename && $rename eq '1') {
+	
+	silico_msg('h',	"Rename field is not set!\n",
+			"Please set a rename field using the -r flag.\n");	
+}
+
+foreach $arg (@arguments) {
+	
+	if (!quiet()) {
+		print "\n";
+		print "Splitting file '$arg' into files containing $size structure(s)\n" if $size;
+		print "Splitting file '$arg' into files containing based on value in field '$field'\n" if $field;
+	}
+
+	if ($dir && !-e $dir) {
+		makedir($dir);
+	}
+	
+	sdf_fastsplit($arg, $dir, $ostyle ,$size, $rename, $field, $nf);
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

@@ -1,0 +1,145 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! mol_rot_bond
+#? Set the torsion angle between four atoms to a specified value.
+#. The four atoms are not necessarily bonded to each other, however
+#  it makes more chemical sense if they are (provided the middle two
+#  are not in a ring). If the middle two atoms are in a ring, nothing
+#  will be done.
+#. Using the -inc and -steps flag will generate additional strucutres incremented by angle 'inc'
+#F
+#; -a_<number>	Atom A number
+#; -b_<number>	Atom B number
+#; -c_<number>	Atom C number
+#; -d_<number>	Atom D number
+#; -ang_<number>	Desired (or initial) torsion angle (degrees)
+#; -inc_<number> Angle increment (optional)
+#; -s_<number> Number of steps to increment (optional)
+
+#. $Revision: 1.16.2.1.2.5 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+
+
+my $arg;
+my @arguments;
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("mol_rot_bond", '$Revision: 1.16.2.1.2.5 $');
+
+my $a1 = 	make_flag('a', "atom1",		'Atom 1',				1, undef, 1);
+my $a2 = 	make_flag('b', "atom2",		'Atom 2',				1, undef, 1);
+my $a3 = 	make_flag('c', "atom3", 	'Atom 3',				1, undef, 1);
+my $a4 = 	make_flag('d', "atom4",		'Atom 4',				1, undef, 1);
+my $ang = 	make_flag('ang', "desired-angle", 'Desired torsion angle (degrees)',	1, 0, 1);
+my $inc =       make_flag('inc', "increment",   'Increment angle', 1, 5, 1);
+my $steps =     make_flag('s', "steps",      'Number of increment steps', 1, undef, 1);
+
+@arguments = get_arguments2(">=1");
+set_default_oappend('rot');
+
+my $outmols;
+
+foreach $arg (@arguments) {
+	
+	my $mol;
+	my $mols;
+	
+	silico_msg('c', "File: $arg\n");
+	
+	$mols = read_mol_any ($arg);
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	foreach $mol (@$mols) {
+	
+		set_torsion_angle($mol, $mol->{ATOMS}[$a1-1], $mol->{ATOMS}[$a2-1], $mol->{ATOMS}[$a3-1], $mol->{ATOMS}[$a4-1], deg_to_rad($ang));
+		$mol->{SDF_DATA}{ANGLE} = $ang;
+		$mol->{NAME} = $ang;
+		$mol->{TITLE} = $ang;
+		push @$outmols, deep_copy($mol);
+		
+		if ($steps) {
+			foreach my $s (1..$steps) {
+				$ang += $inc;
+				set_torsion_angle($mol, $mol->{ATOMS}[$a1-1], $mol->{ATOMS}[$a2-1], $mol->{ATOMS}[$a3-1], $mol->{ATOMS}[$a4-1], deg_to_rad($ang));
+				$mol->{SDF_DATA}{ANGLE} = $ang;
+				$mol->{NAME} = $ang;
+				$mol->{TITLE} = $ang;
+				push @$outmols, deep_copy($mol);
+			}
+			
+		} 
+	}
+	
+	write_mol_any($outmols, undef, undef, "MODEL");
+}
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

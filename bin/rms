@@ -1,0 +1,153 @@
+#!/usr/bin/perl -w
+
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#! rms
+#? Calculate RMS distances between molecules without superimposition
+#. The first structure in the first file is used as the reference structure.
+#  The RMS distance is calculated to all subsequent molecules.  Output
+#  is written to <ref_file>.rms
+#. Heavy atom RMS is calculated by default. The -all flag can be used to 
+#  include hydrogens in the calculations
+#F
+#; -a Use all atoms including hydrogens to calculate RMS.  Uses heavy atoms by default
+#; -s Sort atoms into smiles order before doing RMS comparison.  This may be useful
+#     if molecules have different atom orders.
+#; -w Write out file containing RMS as SDF_DATA
+#SF
+#. Created: DKC 2003
+#. $Revision: 1.21.2.1.2.1 $
+#>
+
+use strict;
+package Silico;
+
+#########################
+# Variable declarations #
+#########################
+
+my $starttime = (times)[0];
+
+###################
+# Start of script #
+###################
+
+silico_setup();
+print_title("rms", '$Revision: 1.21.2.1.2.1 $');
+
+my $all = make_flag('a', 'all-atom', "Calculate all atom RMS");
+my $sort = make_flag('s', 'sort', "Sort atoms into smiles order before doing RMS comparison");
+my $write = make_flag('w', 'write_file', "Write out file containing RMS as SDF_DATA");
+
+my @arguments = get_arguments2('>=1');
+
+my $firstmols = read_mol_any($arguments[0]);
+mol_read_error($arguments[0], 1) if (!defined $firstmols->[0]);
+
+my $ref = $firstmols->[0];
+mol_sort_smiles($ref) if $sort;
+my $firstfilebase = get_filebase($arguments[0]);
+
+if (!get_flag('quiet', 'l')) {
+	
+	print "\n";
+	print "Calculating RMS using all atoms\n" if ($all);
+	print "Calculating RMS using heavy atoms\n" if (!$all);
+	print "\n";
+}
+
+open (OUTFILE, ">$firstfilebase.rms") || file_write_error("$firstfilebase.rms", 1);
+print OUTFILE "#File\tStructure\t";
+print OUTFILE "Heavy_RMS\n" if !$all;
+print OUTFILE "All_RMS\n" if $all;
+
+set_default_oappend('rms');
+
+foreach my $arg (@arguments) {
+
+	my $mols = read_mol_any($arg);
+	
+	if (!defined $mols->[0]) {
+		mol_read_error($arg);
+		next;
+	}
+	
+	my $i = 1;
+	
+	print "\n";
+	printf "%-25s %-25s %-6s\n", 'Mol1', 'Mol2', 'RMS';
+	
+	foreach my $mol (@$mols) {
+		
+		mol_sort_smiles($mol) if $sort;
+		
+		my $rms = rms($ref, $mol, !$all);
+		
+		my $name = $mol->{NAME} || '';
+		
+		printf "%-25s %-25s %6.2f\n", $arg, $name, $rms;
+
+		$mol->{SDF_DATA}{RMS} = $rms;
+		
+		print OUTFILE "$arg\t$i\t$name\t$rms\n";
+		
+		++$i;
+	}
+
+	write_mol_any($mols) if $write;
+}
+
+close OUTFILE;
+
+print_finished_message();
+print_timing_message($starttime);
+
+#################
+# End of script #
+#################
+
+
+
+
+
+
+###############
+# Subroutines #
+###############
+
+sub silico_setup {
+
+        #<
+        #? Locate the Silico libraries and read in the parent library, silico.pm
+        #; Sets: $Silico::home_dir, $Silico::lib_dir
+        #; Requires: nothing
+        #; Returns: nothing
+        #>
+
+        die "Error: The environment variable SILICO_HOME is not set\n" if !$ENV{SILICO_HOME};
+
+        $Silico::home_dir = $ENV{SILICO_HOME}."/";
+        $Silico::lib_dir = $Silico::home_dir."lib/";
+        push @INC, substr($Silico::lib_dir, 0, -1);
+
+        require silico;
+}

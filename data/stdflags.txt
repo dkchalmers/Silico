@@ -1,0 +1,59 @@
+#  COPYRIGHT NOTICE
+#  
+#  Silico - A Perl Molecular Toolkit
+#  Copyright (C) 2008-25 David K. Chalmers and Benjamin P. Roberts,
+#  Department of Medicinal Chemistry, Monash University
+#  
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#  
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#  
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+#<
+#? The list of standard Silico flags (i.e., those found in most Silico programs).
+
+#. Standard Silico Flags:
+#; -o_<format>	Output file format
+#; -O_<file>	Output file name 
+#; -nosort	Do not sort atoms before output
+#; -notype	Do not type atoms before output
+#; -fast	Fast write (equivalent to -nosort -notype)
+#; -bond	Force regeneration of bond records
+#; -nobond	Do not regenerate bond records
+#; -noconect	Do not generate CONECT records for PDB output
+#; -compress_<method>    Output file compression. Method = gz or bz2
+#; --timing	Print more detailed timing information
+#; --quiet	Quiet (suppress notes)
+#; --very-quiet	Very quiet (suppress notes and warnings)
+#; -debug	Write debugging messages
+#
+#
+#. General flags implemented in some programs:
+#; -me		Maximum energy relative to first structure
+#; -ms		Maximum number of structures to read
+#; -ss		Start reading from this structure
+#; --stride_<n>   Read every nth structure from file 
+#; --unique-atom-names Make atom names in molecules unique
+#
+#. PDB file specific flags:
+#; -dupconect	Represent multiple bonds using duplicated CONECT records in PDB output
+#; -longres	Use 4 character residue names in pdb files
+#
+#. SD file specific flags:
+#;  --sdf-2D	Force SDF files to 2D format
+#;  --sdf-3D	Force SDF files to 3D format
+#;  --sdf-squash-hcount  Do not write any values to the SDF hcount field
+#
+#. Gaussian and Gamess specific flags:
+#; --last-structure Retain only the last read structure (implemented in read_gaussian and read_gamess)
+
+#>
