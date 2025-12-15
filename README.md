@@ -192,7 +192,7 @@ box), mol_solvate_bilayer_plane (to place a molecule in a periodic bilayer
 plane) and mol_solvate_bilayer_rod (to place a periodic bilayer rod). 
 
 
-### Caveats 
+### Caveats and notes 
 
 
 Silico certainly contains bugs, definitions of things that may not be the best 
@@ -203,4 +203,15 @@ effort.
 
 Older iterations of silico were published on Sourceforge: 
 sourceforge.net/projects/silico/ 
+
+
+### Citition and citing papers 
+
+
+Please cite as: Silico: A Perl Molecular Toolkit. DK Chalmers and BP Roberts. 
+2010 
+
+
+You can find papers that have used the Silico molecular toolkit here: 
+https://scholar.google.com/scholar?cluster=10206653385737204589 
 

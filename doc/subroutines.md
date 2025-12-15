@@ -1,7 +1,3 @@
-Subroutine documentation generated on Mon 15 Dec 2025 16:25:06 AEDT
- 
-
-
 ## Subroutine Index 
 
 [Aa](#anchor0)                             /vcp1/people/david/bin/Silico1.15/lib/silico_sequence.pm <br>

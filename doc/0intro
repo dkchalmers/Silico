@@ -174,7 +174,7 @@
 
 
 #
-#!3 Caveats
+#!3 Caveats and notes
 # 
 #. Silico certainly contains bugs, definitions of 
 #  things that may not be the best way to define things, inefficient 
@@ -182,5 +182,8 @@
 #  fixed with the application of a lot of time and effort.
 
 #.  Older iterations of silico were published on Sourceforge: sourceforge.net/projects/silico/
+#!3 Citition and citing papers
+#. Please cite as: Silico: A Perl Molecular Toolkit. DK Chalmers and BP Roberts. 2010
+#.  You can find papers that have used the Silico molecular toolkit here: https://scholar.google.com/scholar?cluster=10206653385737204589
 #  
 #>

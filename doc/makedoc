@@ -73,9 +73,6 @@ $home =~ s/(ilico\d\.\d\d).*/$1/;
 chomp $home;
 print "\nUsing silico parent directory: $home\n";
 
-$file_tagged .= "<STD>File documentation generated on ".`date`."";
-$sub_tagged .= "<STD>Subroutine documentation generated on ".`date`."";
-
 $intro_tagged .= read_doc("$home/doc/0intro");
 $file_tagged .= read_doc("$home/doc/0subroutines");
 

@@ -1,7 +1,3 @@
-File documentation generated on Mon 15 Dec 2025 16:25:06 AEDT
- 
-
-
 ## Directory: /vcp1/people/david/bin/Silico1.15/bin 
 
 
