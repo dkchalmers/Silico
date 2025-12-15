@@ -32,6 +32,8 @@
 # 
 #!2 Installation
 # 
+#. Download Silico from Github: git clone git@github.com:dkchalmers/Silico.git
+#
 #. Silico is organised as a single directory tree:
 #; bin Containing the executable scripts
 #; data Atom types, boilerplate text describing silico flags, etc.
@@ -44,12 +46,12 @@
 # 
 #. csh
 #
-#, setenv SILICO_HOME  /path/to/silico
+#, setenv SILICO_HOME  /path/to/Silico
 #, setenv PATH $PATH\:$SILICO_HOME/bin
 # 
 #.  bash
 #
-#, export SILICO_HOME=/path/to/silico
+#, export SILICO_HOME=/path/to/Silico
 #, export PATH="$PATH:$SILICO_HOME/bin"
 # 
 #!2 Using Silico scripts

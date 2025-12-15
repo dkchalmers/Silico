@@ -14,6 +14,9 @@ script for other software.
 ## Installation 
 
 
+Download Silico from Github: git clone git@github.com:dkchalmers/Silico.git 
+
+
 Silico is organised as a single directory tree: 
 
 
@@ -29,12 +32,12 @@ Silico directory. Add the $SILICO_HOME/bin directory to your path.
 
 csh 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setenv SILICO_HOME /path/to/silico  <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setenv SILICO_HOME /path/to/Silico  <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;setenv PATH $PATH\:$SILICO_HOME/bin   <br>
 
 bash 
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;export SILICO_HOME=/path/to/silico  <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;export SILICO_HOME=/path/to/Silico  <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;export PATH="$PATH:$SILICO_HOME/bin"   <br>
 
 ## Using Silico scripts 
