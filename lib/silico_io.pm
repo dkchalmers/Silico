@@ -1397,13 +1397,13 @@ sub get_default_flags_standard {
 
 sub get_default_flags_minimal {
 
-	$Silico::quiet =	make_flag(undef, 	'quiet', 	"Suppress notes", 0, 0);
-	$Silico::veryquiet =	make_flag(undef, 	'very-quiet', 	"Suppress notes and warnings", 0, 0);
-	$Silico::TIMING	=  	make_flag('timing',	'timing',	"Timing mode", 0, 0);
-	$Silico::debug	= 	make_flag('debug',	'debug',	"Debug mode", 0, 0);
-	$Silico::warnings = 	make_flag('warnings',	'warnings',	"Print extended warning information", 0, 0);
-	$Silico::memuse	= 	make_flag('memuse',	'memuse',	"Memory use mode", 0, 0);
-	$Silico::temp_dir = 	make_flag(undef,	'tempdir',	"Temporary working directory", 1,);
+	$Silico::quiet =	make_flag(undef, 	'quiet', 	"Suppress notes", 0);
+	$Silico::veryquiet =	make_flag(undef, 	'very-quiet', 	"Suppress notes and warnings", 0);
+	$Silico::TIMING	=  	make_flag('timing',	'timing',	"Timing mode", 0);
+	$Silico::debug	= 	make_flag('debug',	'debug',	"Debug mode", 0);
+	$Silico::warnings = 	make_flag('warnings',	'warnings',	"Print extended warning information", 0);
+	#$Silico::memuse	= 	make_flag('memuse',	'memuse',	"Memory use mode", 0);
+	$Silico::temp_dir = 	make_flag(undef,	'tempdir',	"Temporary working directory", 1);
 	
 	# Turn on Quiet option if Very Quiet is set
 	if (get_lflag('very-quiet')) {

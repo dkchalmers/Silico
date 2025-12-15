@@ -426,6 +426,8 @@ sub mol_print_warnings {
 	
 	my $mol = $_[0];
 	
+	return if !defined $mol->{WARN};
+	
 	print "\n";
 	foreach my $warn (keys(%{$mol->{WARN}})) {
 			
