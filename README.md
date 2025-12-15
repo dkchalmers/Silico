@@ -212,7 +212,7 @@ sourceforge.net/projects/silico/
 
 
 Please cite as: Silico: A Perl Molecular Toolkit. DK Chalmers and BP Roberts. 
-2010 
+https://github.com/dkchalmers/Silico 
 
 
 You can find papers that have used the Silico molecular toolkit here: 

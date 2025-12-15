@@ -179,7 +179,7 @@
 
 #.  Older iterations of silico were published on Sourceforge: sourceforge.net/projects/silico/
 #!3 Citition and citing papers
-#. Please cite as: Silico: A Perl Molecular Toolkit. DK Chalmers and BP Roberts. 2010
+#. Please cite as: Silico: A Perl Molecular Toolkit. DK Chalmers and BP Roberts. https://github.com/dkchalmers/Silico
 #.  You can find papers that have used the Silico molecular toolkit here: https://scholar.google.com/scholar?cluster=10206653385737204589
 #  
 #>
