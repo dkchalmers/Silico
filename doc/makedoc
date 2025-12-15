@@ -28,7 +28,7 @@
 #. See silico_doc.pm for a description of the simple Silico markup syntax
 #  for documentation.
 #. Flags:
-#; -f Output format (txt, html, or md). Default is md
+#; -f Output format [txt, html, or md]. Default is md
 #; -t Write out tagged text to file tagged.txt
 #>
 
@@ -50,8 +50,8 @@ print_title("makedoc");
 
 require silico_doc;
 
-my $format   = 	make_flag('f', 'format', "Output format (txt, html, md)", 1, 'md');
-         	make_flag('t', 'tagged', "Write out tagged text to file tagged.txt)");
+my $format   = 	make_flag('f', 'format', "Output format [txt, html, md]", 1, 'md');
+         	make_flag('t', 'tagged', "Write out tagged text to file tagged.txt");
 
 get_arguments2();
 

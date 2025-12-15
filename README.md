@@ -18,6 +18,7 @@ Download Silico from Github
 
 `git clone git@github.com:dkchalmers/Silico.git `
 
+
 Silico is organised as a single directory tree: 
 
 
@@ -34,12 +35,16 @@ Silico directory. Add the $SILICO_HOME/bin directory to your path.
 csh 
 
 `setenv SILICO_HOME /path/to/Silico `
+
 `setenv PATH $PATH\:$SILICO_HOME/bin `
+
 
 bash 
 
 `export SILICO_HOME=/path/to/Silico `
+
 `export PATH="$PATH:$SILICO_HOME/bin" `
+
 
 ## Using Silico scripts 
 
@@ -53,6 +58,7 @@ scriptname <flags> filename1 filename2 ....
 Flags start with a the character '-'. For example, the command 
 
 `write_mol -o mol2 $SILICO_HOME/test/molecules/tricycle_3D.sdf `
+
 
 will read the file 'tricycle_3D.sdf', set the -o flag (output format) to mol2. 
 The result will be a new output file 'tricycle_3D_new.mol2'. 
@@ -168,11 +174,9 @@ course of various projects.
 #### File format conversion scripts 
 
 
-A useful features of Silico is that it can read and write files in many 
-different molecular modelling formats. Silico (mostly) recognises the input 
-file types by filename extension. write_g03zmat write_gro write_itp 
-write_merck write_mmod write_mol write_mol2 write_mopac write_pdb write_sdf 
-write_seq write_tab write_tinker 
+Silico can read and write files in several molecular modelling formats. The 
+input file types is (mostly) recognised by filename extension. Some exceptions 
+are made for formats that use a .out suffix, etc. 
 
 
 #### Wrapper sripts for running other programs 

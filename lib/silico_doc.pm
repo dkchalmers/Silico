@@ -519,7 +519,7 @@ sub format_doc_markdown {
 			s/<CODE> *//;
 			$line = formatpara_txt($_,  $linelength, 0);
 			chomp $line;
-			$line = "`$line`\n";
+			$line = "`$line`\n\n";
 			$ptype = 'CODE';
 		}
 

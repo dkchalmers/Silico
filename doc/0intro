@@ -152,11 +152,9 @@
 #
 #!4 File format conversion scripts
 #
-#. A useful features of Silico is that it can read and write
-#  files in many different molecular modelling formats. 
-#  Silico (mostly) recognises the input file types by filename extension.
-#  write_g03zmat  write_gro  write_itp  write_merck  write_mmod  write_mol  
-#  write_mol2  write_mopac  write_pdb  write_sdf  write_seq  write_tab  write_tinker
+#. Silico can read and write files in several molecular modelling formats. 
+#  The input file types is (mostly) recognised by filename extension. Some exceptions
+#  are made for formats that use a .out suffix, etc.
 #
 #!4 Wrapper sripts for running other programs
 #
