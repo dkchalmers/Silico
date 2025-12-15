@@ -18,6 +18,7 @@ Download Silico from Github
 
 `git clone git@github.com:dkchalmers/Silico.git `
 
+
 Silico is organised as a single directory tree: 
 
 
@@ -34,12 +35,16 @@ Silico directory. Add the $SILICO_HOME/bin directory to your path.
 csh 
 
 `setenv SILICO_HOME /path/to/Silico `
+
 `setenv PATH $PATH\:$SILICO_HOME/bin `
+
 
 bash 
 
 `export SILICO_HOME=/path/to/Silico `
+
 `export PATH="$PATH:$SILICO_HOME/bin" `
+
 
 ## Using Silico scripts 
 
