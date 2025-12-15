@@ -37,6 +37,7 @@
 #, #; = Hanging indent (long).
 #, #: = Hanging indent (short, for numbering).
 #, #- = List.
+#, #c = Code block
 #.
 #.  Standard headings:
 #, #F = Flags
@@ -248,7 +249,7 @@ sub format_doc_txt {
 	return "" if !$string;
 	
 	# Split in to paragraphs (on <STD>, <HEAD.> or <INDENT>)
-	@f = split /(?=<STD>)|(?=<STD_DESC>)|(?=<HEAD.>)|(?=<INDENT>)|(?=<HANG>)|(?=<HANG_SHORT>)|(?=<LIST>)/, $string;
+	@f = split /(?=<STD>)|(?=<STD_DESC>)|(?=<HEAD.>)|(?=<INDENT>)|(?=<HANG>)|(?=<HANG_SHORT>)|(?=<LIST>)|(?=<CODE>)/, $string;
 
 	foreach (@f) {
 	
@@ -339,6 +340,15 @@ sub format_doc_txt {
 			$ptype = 'LIST';
 		}
 
+		if (/<CODE>/) {
+			# Do nothing - use STD
+                        s/<CODE> *//;
+                        $line = formatpara_txt($_, $linelength, 0);
+                        $line = "\n".$line if $ptype ne '';
+			print "line $line\n";
+                        $ptype = 'CODE';
+                }
+
 		# No formatting type
 		if ( !defined $line) {
 			$line =  "$_\n";
@@ -411,7 +421,7 @@ sub format_doc_markdown {
 	return "" if !$string;
 	
 	# Split in to paragraphs (on <STD>, <HEAD.> or <INDENT>)
-	my @f = split /(?=<STD>)|(?=<STD_DESC>)|(?=<HEAD.>)|(?=<INDENT>)|(?=<HANG>)|(?=<HANG_SHORT>)|(?=<LIST>)/, $string;
+	my @f = split /(?=<STD>)|(?=<STD_DESC>)|(?=<HEAD.>)|(?=<INDENT>)|(?=<HANG>)|(?=<HANG_SHORT>)|(?=<LIST>)|(?=<CODE>)/, $string;
 
 	foreach (@f) {
 	
@@ -505,6 +515,14 @@ sub format_doc_markdown {
 			$ptype = 'LIST';
 		}
 
+		if (/<CODE>/) {
+			s/<CODE> *//;
+			$line = formatpara_txt($_,  $linelength, 0);
+			chomp $line;
+			$line = "`$line`\n";
+			$ptype = 'CODE';
+		}
+
 		# No formatting type
 		if ( !defined $line) {
 			$line =  "$_\n";
@@ -536,6 +554,7 @@ sub tag_markup {
 	#, #: -> < HANG_SHORT >
 	#, #, -> < INDENT >
 	#, #- -> < LIST >
+	#, #c -> < CODE >
 	#. Boilerplate flags #F and #SF cause the standard text to be inserted
 	#. #INCLUDE <filename> causes the file from $SILICO_HOME/data to be inserted
 	#. (Note that extra spaces have been added to the tags above to
@@ -673,6 +692,11 @@ sub tag_markup {
 			$current = 'LIST';
 		}
 
+		# Code block
+		if (/^\s*#c\s*/) {
+			s/^\s*#c/<CODE>/;
+			$current = 'CODE';
+		}
 		# Clean up output #
 		
 		# Remove multiple spaces and tabs
@@ -723,6 +747,7 @@ sub format_string_html {
 	#; <HANG_SHORT>
 	#; <INDENT>
 	#; <LIST>
+	#; <CODE>
 	#>
 
 	my $string = $_[0];
@@ -738,7 +763,7 @@ sub format_string_html {
 	return "" if !$string;
 	
 	# Split in to paragraphs (on <STD>, <HEADER> or <INDENT>)
-	@f = split /(?=<STD>)|(?=<STD_DESC>)|(?=<HEAD.>)|(?=<INDENT>)|(?=<HANG>)|(?=<HANG_SHORT>)|(?=<LIST>)|(?=<TABLE_ROW>)/, $string;
+	@f = split /(?=<STD>)|(?=<STD_DESC>)|(?=<HEAD.>)|(?=<INDENT>)|(?=<HANG>)|(?=<HANG_SHORT>)|(?=<LIST>)|(?=<CODE>)|(?=<TABLE_ROW>)/, $string;
 
 	foreach (@f) {
 	
@@ -840,6 +865,12 @@ sub format_string_html {
 		if (/<LIST>/) {
 			s/<LIST> *//;
 			$fstring .= "$_ ";
+			$fstring .= "<br>\n";
+			next;
+		}
+		if (/<CODE>/) {
+			s/<CODE> *//;
+			$fstring .= "<span style=\"font-family: monospace;\">$_ </span> ";
 			$fstring .= "<br>\n";
 			next;
 		}

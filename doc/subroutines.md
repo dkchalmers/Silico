@@ -4676,6 +4676,7 @@ Tags
 &lt;HANG SHORT&gt; <br>
 &lt;INDENT&gt; <br>
 &lt;LIST&gt; <br>
+&lt;CODE&gt; <br>
 
 ### <a name="anchor228"></a>Formatdata                     
 /vcp1/people/david/bin/Silico1.15/lib/silico_pdb.pm 
@@ -12954,6 +12955,7 @@ Tags are:
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#: -&gt; &lt; HANG_SHORT &gt;  <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#, -&gt; &lt; INDENT &gt;  <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#- -&gt; &lt; LIST &gt;  <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#c -&gt; &lt; CODE &gt;  <br>
 
 Boilerplate flags #F and #SF cause the standard text to be inserted 
 

@@ -841,16 +841,13 @@ Revision: 1.4.2.1.2.3
 ## formatdoc 
 
 
-Print formatted comments from silico files 
-
-
-Revision: 1.17.2.1.2.1 
+Print formatted comments from Silico files 
 
 
 Flags: 
 
 
--h&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Write HTML output to a file <br>
+-f&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Output format (txt, html, or md). Default is txt <br>
 -s&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Generate subroutine descriptions <br>
 
 ## make_box 
@@ -4811,6 +4808,7 @@ Simplified markup syntax:
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#; = Hanging indent (long).  <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#: = Hanging indent (short, for numbering).  <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#- = List.  <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;#c = Code block  <br>
 
 
 

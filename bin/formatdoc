@@ -22,10 +22,9 @@
 
 #<
 #! formatdoc
-#? Print formatted comments from silico files
-#. $Revision: 1.17.2.1.2.1 $
+#? Print formatted comments from Silico files
 #F
-#; -h Write HTML output to a file
+#; -f Output format (txt, html, or md). Default is txt
 #; -s Generate subroutine descriptions
 #>
 
@@ -41,7 +40,6 @@ my $file;
 my $formattext;
 my $html;
 my $outfile;
-my $sub;
 my $tag;
 
 use vars qw($SUBHASH);
@@ -55,10 +53,15 @@ print_title("formatdoc", '$Revision: 1.17.2.1.2.1 $');
 
 require silico_doc;
 
-$html = 	make_flag('h', undef,  'Write HTML output');
-$sub =	 	make_flag('s', undef,  'Generate subroutine descriptions');
+my $format   =  make_flag('f', 'format', "Output format (txt, html, md)", 1, 'txt');
+my $sub = 	make_flag('s', undef,  'Generate subroutine descriptions');
 
 @arguments = get_arguments2('>=1');
+
+# Validate format
+if (defined $format && $format ne 'txt' && $format ne 'html' && $format ne 'md') {
+        silico_msg('d', "Invalid format '$format'. Must be one of: txt, html, md\n");
+}
 
 foreach $file (@arguments) {
 	silico_msg('c', "File: $file\n");
@@ -77,7 +80,16 @@ if ($sub) {
 	}
 }
 
-if ($html) {
+if ($format eq 'md') {
+
+	$formattext .= format_doc_markdown($tag);
+	$outfile = "doc.md";
+	silico_msg('c', "\n","Writing $outfile\n");
+	open (DOC, ">$outfile") || file_write_error($outfile, 1);
+	print DOC "$formattext\n";
+	close DOC;
+
+} elsif ($format eq 'html') {
 
 	$formattext .= format_doc_html($tag);
 	$outfile = "doc.html";
