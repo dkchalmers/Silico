@@ -55,12 +55,10 @@ my $starttime = (times)[0];
 silico_setup();
 print_title("write_pdb", '$Revision: 1.1.2.2.2.9 $');
 
-
 		make_flag('de', 'delete-alt-except', "Delete all disorderd (ALT) atoms except those in the specified alternate conformation", 1, 'A');
 my $dl =	make_flag('dl', 'delete-low-occ', "Delete low occupancy", 1);
 my $model = 	make_flag('model', 'model', "Write each structure as a separate MODEL");
 my $nosingle = 	make_flag(undef, 'nosingle', "Do not use single molecule read/write routines");
-
 
 my @arguments = get_arguments2('>=1');
 
@@ -69,7 +67,7 @@ $options = "MODEL " if $model;
 
 foreach my $arg (@arguments) {
 	
-	silico_msg('c', "File: $arg\n");
+	silico_msg('c', "\nFile: $arg\n");
 	
 	if (!$nosingle) {
 	

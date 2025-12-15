@@ -40,6 +40,7 @@ my $file;
 my $formattext;
 my $html;
 my $outfile;
+my $sub;
 my $tag;
 
 use vars qw($SUBHASH);
@@ -54,7 +55,8 @@ print_title("formatdoc", '$Revision: 1.17.2.1.2.1 $');
 require silico_doc;
 
 my $format   =  make_flag('f', 'format', "Output format (txt, html, md)", 1, 'txt');
-my $sub = 	make_flag('s', undef,  'Generate subroutine descriptions');
+
+$sub =	 	make_flag('s', undef,  'Generate subroutine descriptions');
 
 @arguments = get_arguments2('>=1');
 

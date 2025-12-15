@@ -1,4 +1,4 @@
-## Directory: /vcp1/people/david/bin/Silico1.15/bin 
+## Directory: /Users/chalmers/bin/silico-public_1.15/bin 
 
 
 ## bilayer_builder 
@@ -4214,7 +4214,7 @@ Revision: 1.1.2.2
 Created: DKC November 1999 and later. 
 
 
-## Directory: /vcp1/people/david/bin/Silico1.15/data 
+## Directory: /Users/chalmers/bin/silico-public_1.15/data 
 
 
 ## amino_acid_atoms.dat 
@@ -4616,7 +4616,7 @@ Gaussian and Gamess specific flags:
 
 --last-structure Retain only the last read structure (implemented in read_gaussian and read_gamess) <br>
 
-## Directory: /vcp1/people/david/bin/Silico1.15/lib 
+## Directory: /Users/chalmers/bin/silico-public_1.15/lib 
 
 
 ## silico.pm 
