@@ -192,11 +192,15 @@ box), mol_solvate_bilayer_plane (to place a molecule in a periodic bilayer
 plane) and mol_solvate_bilayer_rod (to place a periodic bilayer rod). 
 
 
-### Caveat emptor 
+### Caveats 
 
 
 Silico certainly contains bugs, definitions of things that may not be the best 
 way to define things, inefficient algorithms, poor memory useage, and other 
 things that can easily be fixed with the application of a lot of time and 
 effort. 
+
+
+Older iterations of silico were published on Sourceforge: 
+sourceforge.net/projects/silico/ 
 
